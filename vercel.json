@@ -4,5 +4,17 @@
     "api/*.js": {
       "maxDuration": 10
     }
-  }
+  },
+  "routes": [
+    { "src": "/api/register", "dest": "/api/register.js" },
+    { "src": "/api/login", "dest": "/api/login.js" },
+    { "src": "/api/me$", "dest": "/api/me.js" },
+    { "src": "/api/me/transactions", "dest": "/api/me-transactions.js" },
+    { "src": "/api/me/downlines", "dest": "/api/me-downlines.js" },
+    { "src": "/api/me/commissions", "dest": "/api/me-commissions.js" },
+    { "src": "/api/me/bind-email", "dest": "/api/bind-email.js" },
+    { "src": "/api/reset-password", "dest": "/api/reset-password.js" },
+    { "src": "/api/send-code", "dest": "/api/send-code.js" },
+    { "src": "/api/verify-code", "dest": "/api/verify-code.js" }
+  ]
 }

@@ -1,9 +1,67 @@
 const crypto = require("crypto");
 
+// In-memory tracking for brute-force protection
+// NOTE: This works within a warm serverless container but resets on cold starts.
+// For production with multiple instances, use Redis or a database.
+const verificationStore = new Map();
+
+// Clean up expired entries periodically
+setInterval(function() {
+  const now = Date.now();
+  for (const [key, entry] of verificationStore) {
+    if (now > entry.expiresAt) {
+      verificationStore.delete(key);
+    }
+  }
+}, 60000); // clean every minute
+
+function getTokenKey(token) {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  // Use the HMAC part as the key so it's unique per token+expiry combo
+  return "verify:" + parts[1] + ":" + parts[0];
+}
+
+function initAttempts(token) {
+  const key = getTokenKey(token);
+  if (!key) return;
+  if (!verificationStore.has(key)) {
+    const parts = token.split(".");
+    verificationStore.set(key, {
+      attempts: 0,
+      used: false,
+      expiresAt: parseInt(parts[0], 10)
+    });
+  }
+}
+
+function incrementAttempts(token) {
+  const key = getTokenKey(token);
+  if (!key) return 0;
+  const entry = verificationStore.get(key);
+  if (!entry) return 0;
+  entry.attempts++;
+  return entry.attempts;
+}
+
+function markUsed(token) {
+  const key = getTokenKey(token);
+  if (!key) return;
+  const entry = verificationStore.get(key);
+  if (entry) entry.used = true;
+}
+
+function isUsed(token) {
+  const key = getTokenKey(token);
+  if (!key) return false;
+  const entry = verificationStore.get(key);
+  return entry ? entry.used : false;
+}
+
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -13,51 +71,44 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: "Token and code are required" });
     }
 
-    const secret = process.env.VERIFY_SECRET || "nova-verify-secret-2026";
+    // Initialize tracking for this token
+    initAttempts(token);
+
+    // Check if token has already been used (replay prevention)
+    if (isUsed(token)) {
+      return res.status(400).json({ error: "This verification code has already been used" });
+    }
+
     const parts = token.split(".");
-    if (parts.length !== 2) return res.status(400).json({ error: "Invalid token format" });
+    if (parts.length !== 2) {
+      return res.status(400).json({ error: "Invalid token format" });
+    }
 
     const expiry = parseInt(parts[0], 10);
-    const hmac = parts[1];
+    const storedHmac = parts[1];
 
     if (Date.now() > expiry) {
       return res.status(400).json({ error: "Verification code has expired. Please request a new one." });
     }
 
-    // Reconstruct and verify HMAC
-    // We need the original payload, but HMAC is one-way. We try verification with the provided code
-    // Since we don't store the email in the token separately, we check the HMAC
-    // The token was created as: expiry.hmac where hmac = HMAC(email|code|type|expiry)
-    // We can't reverse it, so we verify by checking that the HMAC was properly formed
-    // Actually, the HMAC was created as HMAC(email + "|" + code + "|" + type + "|" + expiry)
-    // We don't have email/type here... Need a different approach.
-    
-    // Better approach: HMAC only the expiry, store in a simple format
-    // Since we can't reverse the HMAC, let's verify the HMAC structure
-    // The code is sent separately, we just verify the token is valid and not expired
-    
-    // Simple approach: verify the HMAC of the expiry + code
-    // But we need the original data... Let's use a stateless approach:
-    // Token = expiry.HMAC(code|expiry|secret)
-    // This way we can verify with just the code and token
-    
-    // Actually, let's re-read the send-code.js - it creates:
-    // payload = email + "|" + code + "|" + type + "|" + expiry
-    // hmac = HMAC(payload)
-    // token = expiry + "." + hmac
-    
-    // So we can verify by recomputing HMAC of just (code + "|" + expiry) with the secret
-    // This is not exactly matching but let's do it differently:
-    // We verify by computing HMAC(code + "|" + expiry, secret) and comparing
-    
+    const secret = process.env.VERIFY_SECRET || "nova-verify-secret-2026";
+    const payload = code + "|" + expiry;
     const expectedHmac = crypto.createHmac("sha256", secret)
-      .update(code + "|" + expiry)
+      .update(payload)
       .digest("hex");
 
-    // Accept if the first 8 chars match (fuzzy match to handle the original format)
-    if (hmac.substring(0, 8) !== expectedHmac.substring(0, 8)) {
+    if (expectedHmac !== storedHmac) {
+      // Increment failed attempts
+      const attempts = incrementAttempts(token);
+      if (attempts >= 3) {
+        markUsed(token); // Invalidate token after 3 failed attempts
+        return res.status(400).json({ error: "Too many failed attempts. Please request a new verification code." });
+      }
       return res.status(400).json({ error: "Invalid verification code" });
     }
+
+    // Mark as used to prevent replay
+    markUsed(token);
 
     return res.json({ success: true, message: "Code verified successfully" });
   } catch (err) {

@@ -6,7 +6,7 @@ function generateCode() {
 }
 
 function createToken(email, code, type) {
-  const expiry = Date.now() + 5 * 60 * 1000;
+  const expiry = Date.now() + 10 * 60 * 1000;
   const secret = process.env.VERIFY_SECRET || "nova-verify-secret-2026";
   const payload = code + "|" + expiry;
   const hmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
@@ -73,12 +73,9 @@ module.exports = async (req, res) => {
     const token = createToken(email, code, normalizedType);
 
     const tpl = getTemplate(normalizedType);
-    const apiKey = process.env.RESEND_API_KEY || "re_dRtDog62_5x6oLYLBWkEHdTNnYhTw7k1o";
+    const apiKey = process.env.RESEND_API_KEY || "set-via-env-var";
 
-    let fromEmail = process.env.RESEND_FROM_EMAIL;
-    if (!fromEmail) {
-      fromEmail = "Nova Exchange <noreply@mail.alh777.com>";
-    }
+    let fromEmail = process.env.RESEND_FROM_EMAIL || "Nova Exchange <noreply@resend.dev>";
 
     const resend = new Resend(apiKey);
     const { data, error } = await resend.emails.send({
@@ -89,7 +86,7 @@ module.exports = async (req, res) => {
     });
     if (error) return res.status(500).json({ error: error.message });
 
-    return res.json({ message: "Verification code sent to " + email, token: token });
+    return res.json({ success: true, message: "Verification code sent to " + email, token: token });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
