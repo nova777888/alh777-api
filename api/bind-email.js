@@ -1,18 +1,22 @@
+
 const { createClient } = require("@supabase/supabase-js");
 const crypto = require("crypto");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "set-via-env-var";
+// Try both common env var names for service role key
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KE || "";
 
 function verifyCodeToken(token, code) {
-  const parts = token.split(".");
-  if (parts.length !== 2) return false;
-  const expiry = parseInt(parts[0], 10);
-  if (Date.now() > expiry) return false;
-  const secret = process.env.VERIFY_SECRET || "nova-verify-secret-2026";
-  const payload = code + "|" + expiry;
-  const expectedHmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
-  return expectedHmac === parts[1];
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 2) return false;
+    const expiry = parseInt(parts[0], 10);
+    if (Date.now() > expiry) return false;
+    const secret = process.env.VERIFY_SECRET || "nova-verify-secret-2026";
+    const payload = code + "|" + expiry;
+    const expectedHmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+    return expectedHmac === parts[1];
+  } catch(e) { return false; }
 }
 
 module.exports = async (req, res) => {
@@ -45,15 +49,16 @@ module.exports = async (req, res) => {
     const { data: { user } } = await sbAdmin.auth.getUser(authToken);
     if (!user) return res.status(401).json({ error: "Invalid token" });
 
+    // Update email in Supabase Auth
     const { error: updateErr } = await sbAdmin.auth.admin.updateUserById(
       user.id, { email: email.toLowerCase().trim() }
     );
 
     if (updateErr) return res.status(500).json({ error: updateErr.message });
 
-    // Update email in customers table (Vercel uses 'users' table as name)
+    // Update email in users table (not 'customers')
     const { error: profileErr } = await sbAdmin
-      .from("customers")
+      .from("users")
       .update({ email: email.toLowerCase().trim() })
       .eq("id", user.id);
 

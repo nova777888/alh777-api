@@ -1,7 +1,60 @@
+
 const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
+
+function generatePhoneEmails(rawPhone) {
+  var emails = [];
+  var digits = String(rawPhone || "").replace(/[^0-9]/g, "");
+  if (!digits) return emails;
+  
+  // Collect all possible formats
+  var formats = [];
+  
+  // Raw digits as-is
+  formats.push(digits);
+  
+  // If it's 11 digits starting with 0 (Nigerian), also try without the leading 0
+  if (digits.length === 11 && digits.startsWith("0")) {
+    formats.push(digits.substring(1)); // 8012345678
+  }
+  
+  // If it has 10 digits (no leading 0), also try with 0 prefix
+  if (digits.length === 10) {
+    formats.push("0" + digits); // 08012345678
+  }
+  
+  // Try +234 prefix versions
+  if (digits.length === 10) {
+    formats.push("+234" + digits); // +2348012345678
+    formats.push("234" + digits);  // 2348012345678
+  }
+  if (digits.length === 11 && digits.startsWith("0")) {
+    var withoutZero = digits.substring(1);
+    formats.push("+234" + withoutZero);
+    formats.push("234" + withoutZero);
+  }
+  
+  // Deduplicate
+  var seen = {};
+  var unique = [];
+  for (var i = 0; i < formats.length; i++) {
+    if (!seen[formats[i]]) {
+      seen[formats[i]] = true;
+      unique.push(formats[i]);
+    }
+  }
+  
+  // Convert each to email format
+  for (var j = 0; j < unique.length; j++) {
+    if (!unique[j].includes("@")) {
+      emails.push(unique[j] + "@nogin.nova.local");
+    }
+  }
+  
+  return emails;
+}
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -17,42 +70,56 @@ module.exports = async (req, res) => {
     
     if (!password) return res.status(400).json({ error: "Password required" });
 
-    var userEmail = null;
-    var lookupPhone = (phoneOrAccount || "").replace(/[\s\-\(\)]/g, "");
+    var emailsToTry = [];
 
-    // Determine which email to use for Supabase Auth sign-in
     if (loginEmail) {
       // Direct email login
-      userEmail = loginEmail.toLowerCase().trim();
-    } else if (lookupPhone) {
-      // Phone login - use the same generated email format as register.js
-      userEmail = lookupPhone + "@nogin.nova.local";
+      emailsToTry.push(loginEmail.toLowerCase().trim());
+    } else if (phoneOrAccount) {
+      // Phone login - try all possible email formats
+      emailsToTry = generatePhoneEmails(phoneOrAccount);
     } else {
       return res.status(400).json({ error: "Phone number or email required" });
     }
 
-    // Try to sign in with Supabase Auth
-    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    if (emailsToTry.length === 0) {
+      return res.status(400).json({ error: "Could not determine login credentials" });
+    }
+
+    // Try each email format
+    var sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const { data, error } = await sb.auth.signInWithPassword({
-      email: userEmail,
-      password
-    });
+    var lastError = null;
+    var successfulResult = null;
+    var successfulEmail = null;
 
-    if (error) {
+    for (var i = 0; i < emailsToTry.length; i++) {
+      var emailAttempt = emailsToTry[i];
+      var result = await sb.auth.signInWithPassword({
+        email: emailAttempt,
+        password
+      });
+      
+      if (!result.error && result.data && result.data.user) {
+        successfulResult = result;
+        successfulEmail = emailAttempt;
+        break;
+      }
+      
+      lastError = result.error;
+    }
+
+    if (!successfulResult) {
       return res.status(401).json({ error: "Invalid phone number or password" });
     }
 
-    if (!data || !data.user) {
-      return res.status(401).json({ error: "Login failed" });
-    }
+    var data = successfulResult;
 
     // Try to get user profile from the users table
     var profile = null;
     try {
-      // Try by user ID first
       const { data: profileById } = await sb
         .from("users")
         .select("*")
@@ -62,11 +129,11 @@ module.exports = async (req, res) => {
       if (profileById) {
         profile = profileById;
       } else {
-        // Try by email
+        // Try by email - try the auth email and other variations
         const { data: profileByEmail } = await sb
           .from("users")
           .select("*")
-          .eq("email", userEmail)
+          .eq("email", successfulEmail)
           .maybeSingle();
         profile = profileByEmail;
       }
@@ -86,7 +153,7 @@ module.exports = async (req, res) => {
       token: data.session?.access_token || "",
       user: profile || { 
         id: data.user.id, 
-        email: userEmail,
+        email: successfulEmail,
         name: (phoneOrAccount || loginEmail || ""),
         phone: phoneOrAccount || "",
         referral_code: data.user.id ? data.user.id.substring(0, 6).toUpperCase() : ""

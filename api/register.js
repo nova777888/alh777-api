@@ -137,7 +137,19 @@ module.exports = async (req, res) => {
       });
     } else {
       // No email provided
-      const genEmail = phone + "@nogin.nova.local";
+      var normPhone = String(phone || "").replace(/[^0-9]/g, "");
+    if (normPhone.length === 11 && normPhone.startsWith("0")) {
+      normPhone = "+234" + normPhone.substring(1);
+    } else if (normPhone.length === 10) {
+      normPhone = "+234" + normPhone;
+    } else if (normPhone.length === 13 && normPhone.startsWith("234")) {
+      normPhone = "+" + normPhone;
+    } else if (normPhone.length < 10) {
+      normPhone = phone;
+    } else if (!normPhone.startsWith("+")) {
+      normPhone = "+" + normPhone;
+    }
+    const genEmail = normPhone + "@nogin.nova.local";
       const referral = referral_code || ("REF" + Math.random().toString(36).substring(2, 8).toUpperCase());
 
       const { data: signUpData, error: signUpError } = await sb.auth.signUp({

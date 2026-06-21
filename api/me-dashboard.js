@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
       .from("users")
       .select("*")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
     var balance = 0;
     if (profile && profile.balance) {

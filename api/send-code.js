@@ -15,7 +15,7 @@ function createToken(email, code, type) {
 
 const templates = {
   "register": {
-    subject: "Nova Exchange - Email Verification Code",
+    subject: "Nova Exchange -Email Verification .",
     html: (code) => `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f8fafc;border-radius:12px">
       <h2 style="color:#0a7b7b;margin-bottom:16px">Nova Exchange</h2>
       <p style="color:#0a1c2f;font-size:15px;line-height:1.6">Thank you for registering! Use the code below to verify your email:</p>
@@ -26,7 +26,7 @@ const templates = {
     </div>`
   },
   "forgot-password": {
-    subject: "Nova Exchange - Password Reset Code",
+    subject: "Nova Exchange -Password Reset .",
     html: (code) => `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f8fafc;border-radius:12px">
       <h2 style="color:#0a7b7b;margin-bottom:16px">Nova Exchange</h2>
       <p style="color:#0a1c2f;font-size:15px;line-height:1.6">We received a request to reset your password. Use the code below:</p>
@@ -37,7 +37,7 @@ const templates = {
     </div>`
   },
   "bind-email": {
-    subject: "Nova Exchange - Bind Email Verification Code",
+    subject: "Nova Exchange -Bind Email Verification .",
     html: (code) => `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f8fafc;border-radius:12px">
       <h2 style="color:#0a7b7b;margin-bottom:16px">Nova Exchange</h2>
       <p style="color:#0a1c2f;font-size:15px;line-height:1.6">Use the code below to bind this email to your account:</p>
@@ -75,7 +75,7 @@ module.exports = async (req, res) => {
     const tpl = getTemplate(normalizedType);
     const apiKey = process.env.RESEND_API_KEY || "set-via-env-var";
 
-    let fromEmail = process.env.RESEND_FROM_EMAIL || "Nova Exchange <noreply@resend.dev>";
+    let fromEmail = process.env.RESEND_FROM_EMAIL || "Nova Exchange <onboarding@resend.dev>";
 
     const resend = new Resend(apiKey);
     const { data, error } = await resend.emails.send({
