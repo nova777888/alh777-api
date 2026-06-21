@@ -1,4 +1,4 @@
-﻿const { Resend } = require("resend");
+const { Resend } = require("resend");
 const crypto = require("crypto");
 
 function generateCode() {
@@ -6,9 +6,9 @@ function generateCode() {
 }
 
 function createToken(email, code, type) {
-  const secret = process.env.VERIFY_SECRET || "nova-verify-secret-2026";
   const expiry = Date.now() + 5 * 60 * 1000;
-  const payload = email + "|" + code + "|" + type + "|" + expiry;
+  const secret = process.env.VERIFY_SECRET || "nova-verify-secret-2026";
+  const payload = code + "|" + expiry;
   const hmac = crypto.createHmac("sha256", secret).update(payload).digest("hex");
   return expiry + "." + hmac;
 }
@@ -56,23 +56,29 @@ function getTemplate(type) {
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
     const { email, type } = req.body;
     if (!email || !type) return res.status(400).json({ error: "Email and type required" });
-    if (!["register", "forgot-password", "bind-email"].includes(type)) {
+
+    const normalizedType = type === "forgot" ? "forgot-password" : type;
+    if (!["register", "forgot-password", "bind-email"].includes(normalizedType)) {
       return res.status(400).json({ error: "Invalid type" });
     }
 
     const code = generateCode();
-    const token = createToken(email, code, type);
+    const token = createToken(email, code, normalizedType);
 
-    const tpl = getTemplate(type);
+    const tpl = getTemplate(normalizedType);
     const apiKey = process.env.RESEND_API_KEY || "re_dRtDog62_5x6oLYLBWkEHdTNnYhTw7k1o";
-    const fromEmail = process.env.RESEND_FROM_EMAIL || "noreply@alh777.com";
+
+    let fromEmail = process.env.RESEND_FROM_EMAIL;
+    if (!fromEmail) {
+      fromEmail = "Nova Exchange <noreply@mail.alh777.com>";
+    }
 
     const resend = new Resend(apiKey);
     const { data, error } = await resend.emails.send({
