@@ -1,4 +1,4 @@
-const { createClient } = require("@supabase/supabase-js");
+﻿const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
@@ -93,11 +93,16 @@ module.exports = async (req, res) => {
         balance: 0,
         created_at: new Date().toISOString()
       };
-      if (referredById) userRecord.referred_by = referredById;
+      if (referredById) { try { userRecord.referred_by = referredById; } catch(e) {} }
 
       const { error: profileError } = await sb
         .from("users")
         .upsert([userRecord], { onConflict: "id" });
+      if (profileError && profileError.message && profileError.message.indexOf("referred_by") > -1) {
+        delete userRecord.referred_by;
+        const { error: retryErr } = await sb.from("users").upsert([userRecord], { onConflict: "id" });
+        if (retryErr && retryErr.code !== "23505") console.warn("Profile upsert retry warning:", retryErr.message);
+      }
 
       if (profileError && profileError.code !== "23505") {
         console.warn("Profile upsert warning:", profileError.message);
@@ -165,11 +170,16 @@ module.exports = async (req, res) => {
         balance: 0,
         created_at: new Date().toISOString()
       };
-      if (referredById) userRecord.referred_by = referredById;
+      if (referredById) { try { userRecord.referred_by = referredById; } catch(e) {} }
 
       const { error: profileError } = await sb
         .from("users")
         .upsert([userRecord], { onConflict: "id" });
+      if (profileError && profileError.message && profileError.message.indexOf("referred_by") > -1) {
+        delete userRecord.referred_by;
+        const { error: retryErr } = await sb.from("users").upsert([userRecord], { onConflict: "id" });
+        if (retryErr && retryErr.code !== "23505") console.warn("Profile upsert retry warning:", retryErr.message);
+      }
 
       if (profileError && profileError.code !== "23505") {
         console.warn("Profile upsert warning:", profileError.message);
@@ -195,3 +205,4 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
