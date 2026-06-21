@@ -16,19 +16,31 @@ module.exports = async (req, res) => {
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: `Bearer ${token}` } }
+      global: { headers: { Authorization: "Bearer " + token } }
     });
 
     const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: "Invalid token" });
 
-    const { data: downlines } = await sb
+    // Find users who were referred by this user (referred_by = user.id)
+    const { data: downlines, error: dlErr } = await sb
       .from("users")
       .select("id, name, email, phone, created_at, referral_code")
-      .ilike("referral_code", "%" + user.id + "%")
+      .eq("referred_by", user.id)
       .order("created_at", { ascending: false });
+
+    if (dlErr) {
+      // Fallback: try referral_code matching
+      const { data: fallback } = await sb
+        .from("users")
+        .select("id, name, email, phone, created_at, referral_code")
+        .or("referral_code.eq." + (user.id || ""))
+        .order("created_at", { ascending: false });
+      return res.json({ success: true, downlines: fallback || [] });
+    }
 
     return res.json({ success: true, downlines: downlines || [] });
   } catch (err) {
-    return res.json({ downlines: [] });
+    return res.json({ success: true, downlines: [] });
   }
 };

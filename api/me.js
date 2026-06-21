@@ -15,13 +15,13 @@ module.exports = async (req, res) => {
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: `Bearer ${token}` } }
+      global: { headers: { Authorization: "Bearer " + token } }
     });
 
     const { data: { user }, error: userErr } = await sb.auth.getUser(token);
     if (userErr || !user) return res.status(401).json({ error: "Invalid token" });
 
-    // GET /api/me - return user profile
+    // Get user profile from users table
     const { data: profile, error: profileErr } = await sb
       .from("users")
       .select("*")
@@ -29,13 +29,58 @@ module.exports = async (req, res) => {
       .single();
 
     if (profileErr && profileErr.code !== "PGRST116") {
+      // Try by email
       const { data: profileByEmail } = await sb
         .from("users")
         .select("*")
         .eq("email", user.email)
         .single();
-      return res.json({ success: true, user: profileByEmail || { id: user.id, email: user.email } });
+      
+      var userData = profileByEmail || { id: user.id, email: user.email, name: user.user_metadata?.name || "", phone: user.user_metadata?.phone || "" };
+      
+      // Add phone_masked
+      if (userData.phone) {
+        var p = String(userData.phone);
+        userData.phone_masked = "********" + p.slice(-4);
+      }
+      
+      return res.json({ success: true, user: userData });
     }
+
+    if (!profile) {
+      return res.json({
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email || "",
+          name: user.user_metadata?.name || "",
+          phone: user.user_metadata?.phone || "",
+          phone_masked: "N/A"
+        }
+      });
+    }
+
+    // Add phone_masked field
+    if (profile.phone) {
+      var p = String(profile.phone);
+      profile.phone_masked = "********" + p.slice(-4);
+    }
+
+    // Get downline count
+    const { count: downlineCount } = await sb
+      .from("users")
+      .select("id", { count: "exact" })
+      .eq("referred_by", user.id);
+
+    profile.downline_count = downlineCount || 0;
+
+    // Format balance as object for frontend
+    var balVal = typeof profile.balance === "number" ? profile.balance : 0;
+    profile.balance = {
+      available_balance: balVal,
+      total_earned: 0,
+      total_withdrawn: 0
+    };
 
     return res.json({ success: true, user: profile });
   } catch (err) {

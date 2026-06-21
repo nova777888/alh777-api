@@ -28,6 +28,19 @@ module.exports = async (req, res) => {
 
     const emailLower = email ? email.toLowerCase() : null;
 
+    // If referral_code is provided, look up the referrer's user ID
+    var referredById = null;
+    if (referral_code) {
+      const { data: referrer } = await sb
+        .from("users")
+        .select("id, referral_code")
+        .eq("referral_code", referral_code)
+        .single();
+      if (referrer && referrer.id) {
+        referredById = referrer.id;
+      }
+    }
+
     // If email is provided, sign up via Supabase Auth
     if (emailLower) {
       const { data: signUpData, error: signUpError } = await sb.auth.signUp({
@@ -43,6 +56,7 @@ module.exports = async (req, res) => {
       });
 
       if (signUpError) {
+        // ... existing error handling ...
         if (signUpError.message.toLowerCase().includes("rate limit") || signUpError.message.toLowerCase().includes("too many")) {
           return res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
         }
@@ -70,17 +84,20 @@ module.exports = async (req, res) => {
 
       const referral = referral_code || ("REF" + Math.random().toString(36).substring(2, 8).toUpperCase());
       
+      const userRecord = {
+        id: signUpData.user.id,
+        name: name || "",
+        phone: phone || "",
+        email: emailLower,
+        referral_code: referral,
+        balance: 0,
+        created_at: new Date().toISOString()
+      };
+      if (referredById) userRecord.referred_by = referredById;
+
       const { error: profileError } = await sb
         .from("users")
-        .upsert([{
-          id: signUpData.user.id,
-          name: name || "",
-          phone: phone || "",
-          email: emailLower,
-          referral_code: referral,
-          balance: 0,
-          created_at: new Date().toISOString()
-        }], { onConflict: "id" });
+        .upsert([userRecord], { onConflict: "id" });
 
       if (profileError && profileError.code !== "23505") {
         console.warn("Profile upsert warning:", profileError.message);
@@ -114,11 +131,10 @@ module.exports = async (req, res) => {
         user: profile || { id: signInData.user.id, name, email: emailLower, phone }
       });
     } else {
-      // No email provided - create user directly in users table with a generated email for Supabase auth
+      // No email provided
       const genEmail = phone + "@nogin.nova.local";
       const referral = referral_code || ("REF" + Math.random().toString(36).substring(2, 8).toUpperCase());
 
-      // Sign up with generated email (for Supabase auth storage)
       const { data: signUpData, error: signUpError } = await sb.auth.signUp({
         email: genEmail,
         password,
@@ -140,24 +156,25 @@ module.exports = async (req, res) => {
 
       if (!signUpData.user) return res.status(500).json({ error: "Signup failed" });
 
-      // Store profile in users table
+      const userRecord = {
+        id: signUpData.user.id,
+        name: name || "",
+        phone: phone || "",
+        email: genEmail,
+        referral_code: referral,
+        balance: 0,
+        created_at: new Date().toISOString()
+      };
+      if (referredById) userRecord.referred_by = referredById;
+
       const { error: profileError } = await sb
         .from("users")
-        .upsert([{
-          id: signUpData.user.id,
-          name: name || "",
-          phone: phone || "",
-          email: genEmail,
-          referral_code: referral,
-          balance: 0,
-          created_at: new Date().toISOString()
-        }], { onConflict: "id" });
+        .upsert([userRecord], { onConflict: "id" });
 
       if (profileError && profileError.code !== "23505") {
         console.warn("Profile upsert warning:", profileError.message);
       }
 
-      // Sign in
       const { data: signInData, error: signInError } = await sb.auth.signInWithPassword({
         email: genEmail,
         password
