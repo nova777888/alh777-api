@@ -21,68 +21,82 @@ module.exports = async (req, res) => {
     const { data: { user }, error: userErr } = await sb.auth.getUser(token);
     if (userErr || !user) return res.status(401).json({ error: "Invalid token" });
 
-    // Get user profile from users table
+    // Build fallback user from Auth metadata
+    var fallbackUser = {
+      id: user.id,
+      email: user.email || "",
+      name: (user.user_metadata && user.user_metadata.name) || "",
+      phone: (user.user_metadata && user.user_metadata.phone) || "",
+      referral_code: (user.user_metadata && user.user_metadata.referral_code) || user.id.substring(0, 6).toUpperCase(),
+      balance: 0,
+      downline_count: 0,
+      phone_masked: "N/A",
+      created_at: user.created_at || new Date().toISOString()
+    };
+
+    // Try to get profile from users table
     const { data: profile, error: profileErr } = await sb
       .from("users")
       .select("*")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (profileErr && profileErr.code !== "PGRST116") {
-      // Try by email
+    if (profile) {
+      // User found in users table - use profile data
+      if (profile.phone) {
+        var p = String(profile.phone);
+        profile.phone_masked = "********" + p.slice(-4);
+      } else {
+        profile.phone_masked = "N/A";
+      }
+
+      // Get downline count
+      const { count: downlineCount } = await sb
+        .from("users")
+        .select("id", { count: "exact" })
+        .eq("referred_by", user.id);
+      profile.downline_count = downlineCount || 0;
+
+      // Format balance as object
+      var balVal = typeof profile.balance === "number" ? profile.balance : 0;
+      profile.balance = {
+        available_balance: balVal,
+        total_earned: 0,
+        total_withdrawn: 0
+      };
+
+      return res.json({ success: true, user: profile });
+    }
+
+    // User not in users table - try by email
+    if (user.email) {
       const { data: profileByEmail } = await sb
         .from("users")
         .select("*")
-        .eq("email", user.email)
-        .single();
-      
-      var userData = profileByEmail || { id: user.id, email: user.email, name: user.user_metadata?.name || "", phone: user.user_metadata?.phone || "" };
-      
-      // Add phone_masked
-      if (userData.phone) {
-        var p = String(userData.phone);
-        userData.phone_masked = "********" + p.slice(-4);
-      }
-      
-      return res.json({ success: true, user: userData });
-    }
+        .eq("email", user.email.toLowerCase())
+        .maybeSingle();
 
-    if (!profile) {
-      return res.json({
-        success: true,
-        user: {
-          id: user.id,
-          email: user.email || "",
-          name: user.user_metadata?.name || "",
-          phone: user.user_metadata?.phone || "",
-          phone_masked: "N/A"
+      if (profileByEmail) {
+        if (profileByEmail.phone) {
+          var p2 = String(profileByEmail.phone);
+          profileByEmail.phone_masked = "********" + p2.slice(-4);
         }
-      });
+
+        const { count: dlCount } = await sb
+          .from("users")
+          .select("id", { count: "exact" })
+          .eq("referred_by", profileByEmail.id);
+        profileByEmail.downline_count = dlCount || 0;
+
+        var balVal2 = typeof profileByEmail.balance === "number" ? profileByEmail.balance : 0;
+        profileByEmail.balance = { available_balance: balVal2, total_earned: 0, total_withdrawn: 0 };
+
+        return res.json({ success: true, user: profileByEmail });
+      }
     }
 
-    // Add phone_masked field
-    if (profile.phone) {
-      var p = String(profile.phone);
-      profile.phone_masked = "********" + p.slice(-4);
-    }
-
-    // Get downline count
-    const { count: downlineCount } = await sb
-      .from("users")
-      .select("id", { count: "exact" })
-      .eq("referred_by", user.id);
-
-    profile.downline_count = downlineCount || 0;
-
-    // Format balance as object for frontend
-    var balVal = typeof profile.balance === "number" ? profile.balance : 0;
-    profile.balance = {
-      available_balance: balVal,
-      total_earned: 0,
-      total_withdrawn: 0
-    };
-
-    return res.json({ success: true, user: profile });
+    // No profile found anywhere - return fallback from Auth metadata
+    return res.json({ success: true, user: fallbackUser });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
