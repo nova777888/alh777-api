@@ -50,6 +50,5 @@
       "src": "/api/verify-code",
       "dest": "/api/verify-code.js"
     }
-  ],
-  "cleanUrls": true
+  ]
 }
