@@ -1,4 +1,4 @@
-﻿
+
 const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
@@ -22,6 +22,15 @@ function generatePhoneEmails(rawPhone) {
   
   // If it has 10 digits (no leading 0), also try with 0 prefix
   if (digits.length === 10) {
+
+  // If it has 13 digits starting with 234 (already has country code), 
+  // also try with + prefix (register.js uses "+" + digits)
+  if (digits.length === 13 && digits.startsWith("234")) {
+    formats.push("+" + digits); // +2348012345678
+    // Also try Nigerian 0-prefix format
+    var withoutCountry = digits.substring(3); // 8012345678
+    formats.push("0" + withoutCountry); // 08012345678
+  }
     formats.push("0" + digits); // 08012345678
   }
   
@@ -164,3 +173,4 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
