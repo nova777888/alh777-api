@@ -28,12 +28,12 @@ function normalizePhone(raw) {
 async function generatePublicId(sb) {
   for (var attempt = 0; attempt < 20; attempt++) {
     var digits = "";
-    for (var i = 0; i < 4; i++) digits += Math.floor(Math.random() * 10).toString();
+    for (var i = 0; i < 5; i++) digits += Math.floor(Math.random() * 10).toString();
     var id = "VIP" + digits;
     var { data: existing } = await sb.from("customers").select("id").eq("public_id", id).maybeSingle();
     if (!existing) return id;
   }
-  return "VIP" + Date.now().toString(36).toUpperCase().substring(0, 3);
+  return "VIP" + Date.now().toString(36).toUpperCase().substring(0, 4);
 }
 
 module.exports = async (req, res) => {
