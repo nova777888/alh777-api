@@ -77,19 +77,29 @@ module.exports = async (req, res) => {
         }
         
         if (signUpError.message.toLowerCase().includes("already") || signUpError.code === "user_already_exists") {
-          const { data: signInData, error: signInError } = await sb.auth.signInWithPassword({
-            email: emailLower,
-            password
-          });
-          if (signInError) {
-            return res.status(401).json({ error: "Invalid password" });
+          // Check if this phone number already owns this email in the users table
+          const { data: existingUser } = await sb
+            .from("users")
+            .select("id, phone, email")
+            .eq("email", emailLower)
+            .maybeSingle();
+          
+          if (existingUser && existingUser.phone === phone) {
+            const { data: signInData, error: signInError } = await sb.auth.signInWithPassword({
+              email: emailLower,
+              password
+            });
+            if (signInError) {
+              return res.status(401).json({ error: "Invalid password" });
+            }
+            return res.json({
+              success: true,
+              token: signInData.session?.access_token || "",
+              user: existingUser
+            });
           }
-          const { data: profile } = await sb.from("users").select("*").eq("email", emailLower).single();
-          return res.json({
-            success: true,
-            token: signInData.session?.access_token || "",
-            user: profile || { id: signInData.user.id, email: emailLower, name, phone }
-          });
+          
+          return res.status(409).json({ error: "This email is already registered to another account. Please use a different email or login with your existing account." });
         }
         
         return res.status(500).json({ error: signUpError.message });
