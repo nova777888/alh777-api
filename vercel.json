@@ -1,8 +1,31 @@
 {
   "version": 2,
-  "functions": {
-    "api/*.js": {
-      "maxDuration": 10
-    }
-  }
+  "builds": [
+    { "src": "api/bind-email.js", "use": "@vercel/node" },
+    { "src": "api/login.js", "use": "@vercel/node" },
+    { "src": "api/me.js", "use": "@vercel/node" },
+    { "src": "api/me-dashboard.js", "use": "@vercel/node" },
+    { "src": "api/me-downlines.js", "use": "@vercel/node" },
+    { "src": "api/me-transactions.js", "use": "@vercel/node" },
+    { "src": "api/me-commissions.js", "use": "@vercel/node" },
+    { "src": "api/register.js", "use": "@vercel/node" },
+    { "src": "api/reset-password.js", "use": "@vercel/node" },
+    { "src": "api/send-code.js", "use": "@vercel/node" },
+    { "src": "api/verify-code.js", "use": "@vercel/node" },
+    { "src": "api/me/bind-referrer.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/login", "dest": "/api/login.js" },
+    { "src": "/api/register", "dest": "/api/register.js" },
+    { "src": "/api/me", "dest": "/api/me.js" },
+    { "src": "/api/me/dashboard", "dest": "/api/me-dashboard.js" },
+    { "src": "/api/me/transactions", "dest": "/api/me-transactions.js" },
+    { "src": "/api/me/downlines", "dest": "/api/me-downlines.js" },
+    { "src": "/api/me/commissions", "dest": "/api/me-commissions.js" },
+    { "src": "/api/me/bind-email", "dest": "/api/bind-email.js" },
+    { "src": "/api/me/bind-referrer", "dest": "/api/me/bind-referrer.js" },
+    { "src": "/api/reset-password", "dest": "/api/reset-password.js" },
+    { "src": "/api/send-code", "dest": "/api/send-code.js" },
+    { "src": "/api/verify-code", "dest": "/api/verify-code.js" }
+  ]
 }
