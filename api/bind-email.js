@@ -1,8 +1,10 @@
+
 const { createClient } = require("@supabase/supabase-js");
 const crypto = require("crypto");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
+// Try both common env var names for service role key
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KE || "";
 
 function verifyCodeToken(token, code) {
   try {
@@ -39,47 +41,39 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: "Invalid or expired verification code" });
     }
 
-    var normalizedEmail = email.toLowerCase().trim();
-
-    // Create authenticated client using the user's own token
-    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: "Bearer " + authToken } }
+    // Create admin client with service role key for auth operations
+    const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    // Verify user token
-    const { data: { user }, error: userErr } = await sb.auth.getUser(authToken);
-    if (userErr || !user) return res.status(401).json({ error: "Invalid token" });
+    const { data: { user } } = await sbAdmin.auth.getUser(authToken);
+    if (!user) return res.status(401).json({ error: "Invalid token" });
 
-    // Check if email is already bound to another account
-    try {
-      const { data: existingUser } = await sb
-        .from("users")
-        .select("id")
-        .eq("email", normalizedEmail)
-        .maybeSingle();
-      if (existingUser && existingUser.id !== user.id) {
-        return res.status(409).json({ error: "This email is already bound to another account" });
-      }
-    } catch(e) { /* RLS may block cross-user query, skip check */ }
+    // Update email in Supabase Auth
+    const { error: updateErr } = await sbAdmin.auth.admin.updateUserById(
+      user.id, { email: email.toLowerCase().trim() }
+    );
 
-    // Update email in users table (source of truth for profile)
-    const { error: profileErr } = await sb
+    if (updateErr) return res.status(500).json({ error: updateErr.message });
+
+    // Update email in users table
+    const { error: profileErr } = await sbAdmin
       .from("users")
-      .update({ email: normalizedEmail })
+      .update({ email: email.toLowerCase().trim() })
       .eq("id", user.id);
 
     if (profileErr) {
-      return res.status(500).json({ error: "Failed to update email: " + profileErr.message });
+      return res.status(500).json({ error: "Failed to save email to profile: " + profileErr.message });
     }
 
     // Verify by reading back
-    const { data: verifyProfile } = await sb
+    const { data: verifyProfile } = await sbAdmin
       .from("users")
       .select("email")
       .eq("id", user.id)
       .single();
 
-    if (!verifyProfile || verifyProfile.email !== normalizedEmail) {
+    if (!verifyProfile || verifyProfile.email !== email.toLowerCase().trim()) {
       return res.status(500).json({ error: "Email update verification failed" });
     }
 
@@ -88,3 +82,4 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
