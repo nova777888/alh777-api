@@ -26,14 +26,14 @@ function normalizePhone(raw) {
 }
 
 async function generatePublicId(sb) {
-  var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   for (var attempt = 0; attempt < 20; attempt++) {
-    var id = "";
-    for (var i = 0; i < 7; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
+    var digits = "";
+    for (var i = 0; i < 4; i++) digits += Math.floor(Math.random() * 10).toString();
+    var id = "VIP" + digits;
     var { data: existing } = await sb.from("customers").select("id").eq("public_id", id).maybeSingle();
     if (!existing) return id;
   }
-  return "VIP" + Date.now().toString(36).toUpperCase().substring(0, 4);
+  return "VIP" + Date.now().toString(36).toUpperCase().substring(0, 3);
 }
 
 module.exports = async (req, res) => {
