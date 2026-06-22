@@ -56,16 +56,30 @@ module.exports = async (req, res) => {
 
     if (updateErr) return res.status(500).json({ error: updateErr.message });
 
-    // Update email in users table (not 'customers')
+    // Update email in users table
     const { error: profileErr } = await sbAdmin
       .from("users")
       .update({ email: email.toLowerCase().trim() })
       .eq("id", user.id);
 
-    if (profileErr) console.warn("Profile update warning:", profileErr.message);
+    if (profileErr) {
+      return res.status(500).json({ error: "Failed to save email to profile: " + profileErr.message });
+    }
+
+    // Verify by reading back
+    const { data: verifyProfile } = await sbAdmin
+      .from("users")
+      .select("email")
+      .eq("id", user.id)
+      .single();
+
+    if (!verifyProfile || verifyProfile.email !== email.toLowerCase().trim()) {
+      return res.status(500).json({ error: "Email update verification failed" });
+    }
 
     return res.json({ success: true, message: "Email bound successfully" });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 };
+
