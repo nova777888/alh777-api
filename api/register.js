@@ -108,13 +108,13 @@ module.exports = async (req, res) => {
       };
       if (parentId) customerRecord.parent_id = parentId;
 
-      await sb.from("customers").insert(customerRecord).catch(function(e) { console.warn("customer insert:", e.message); });
+      try { await sb.from("customers").insert(customerRecord); } catch(e) { console.warn("customer insert:", e.message); }
       await sb.from("customer_balances").insert({
         customer_id: signUpData.user.id,
         available_balance: 0,
         total_earned: 0,
         total_withdrawn: 0
-      }).catch(function() {});
+      });
 
       var { data: signInData } = await sb.auth.signInWithPassword({ email: emailLower, password });
       if (!signInData || !signInData.session) {
@@ -157,11 +157,11 @@ module.exports = async (req, res) => {
       };
       if (parentId) customerRecord.parent_id = parentId;
 
-      await sb.from("customers").insert(customerRecord).catch(function(e) { console.warn("customer insert:", e.message); });
+      try { await sb.from("customers").insert(customerRecord); } catch(e) { console.warn("customer insert:", e.message); }
       await sb.from("customer_balances").insert({
         customer_id: signUpData.user.id,
         available_balance: 0, total_earned: 0, total_withdrawn: 0
-      }).catch(function() {});
+      });
 
       var { data: signInData, error: signInError } = await sb.auth.signInWithPassword({ email: genEmail, password });
       if (signInError) return res.status(500).json({ error: "Login after signup failed" });
