@@ -1,7 +1,22 @@
-﻿const { createClient } = require("@supabase/supabase-js");
+const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
+
+async function generateReferralCode(sb) {
+  var code = '';
+  var maxAttempts = 20;
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    var digits = '';
+    for (var d = 0; d < 4; d++) {
+      digits += Math.floor(Math.random() * 10).toString();
+    }
+    code = 'VIP' + digits;
+    var { data: existing } = await sb.from('users').select('id').eq('referral_code', code).maybeSingle();
+    if (!existing) return code;
+  }
+  return code + '_' + Date.now().toString(36).toUpperCase().substring(0, 3);
+}
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -82,7 +97,7 @@ module.exports = async (req, res) => {
 
       if (!signUpData.user) return res.status(500).json({ error: "Signup failed" });
 
-      const referral = referral_code || ("REF" + Math.random().toString(36).substring(2, 8).toUpperCase());
+      var referral = referral_code || await generateReferralCode(sb);
       
       const userRecord = {
         id: signUpData.user.id,
@@ -150,7 +165,7 @@ module.exports = async (req, res) => {
       normPhone = "+" + normPhone;
     }
     const genEmail = normPhone + "@nogin.nova.local";
-      const referral = referral_code || ("REF" + Math.random().toString(36).substring(2, 8).toUpperCase());
+      var referral = referral_code || await generateReferralCode(sb);
 
       const { data: signUpData, error: signUpError } = await sb.auth.signUp({
         email: genEmail,

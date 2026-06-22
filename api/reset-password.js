@@ -34,8 +34,9 @@ module.exports = async (req, res) => {
       const { data: { user }, error: userErr } = await sb.auth.getUser(token);
       if (userErr || !user) return res.status(401).json({ error: "Invalid token" });
 
+      var sbCheck = null;
       if (oldPwd) {
-        const sbCheck = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        sbCheck = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
           auth: { autoRefreshToken: false, persistSession: false }
         });
         const { error: checkError } = await sbCheck.auth.signInWithPassword({
@@ -47,7 +48,7 @@ module.exports = async (req, res) => {
         }
       }
 
-      const { error: updateError } = await sb.auth.updateUser({ password: newPwd });
+      const { error: updateError } = await (sbCheck || sb).auth.updateUser({ password: newPwd });
       if (updateError) return res.status(500).json({ error: updateError.message });
 
       return res.json({ success: true, message: "Password changed successfully" });
