@@ -41,33 +41,27 @@ module.exports = async (req, res) => {
 
     var normalizedEmail = email.toLowerCase().trim();
 
-    if (!SUPABASE_SERVICE_ROLE_KEY) {
-      return res.status(500).json({ error: "Server configuration error: service role key not configured" });
-    }
-
-    const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false }
+    // Use anon key + auth token for users table operations (like other endpoints)
+    const sbUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: "Bearer " + authToken } }
     });
 
-    const { data: { user } } = await sbAdmin.auth.getUser(authToken);
+    const { data: { user } } = await sbUser.auth.getUser(authToken);
     if (!user) return res.status(401).json({ error: "Invalid token" });
 
     // Check if email already belongs to another user in users table
-    const { data: existingUser, error: existingErr } = await sbAdmin
+    const { data: existingUser } = await sbUser
       .from("users")
       .select("id")
       .eq("email", normalizedEmail)
       .neq("id", user.id)
       .maybeSingle();
-    if (existingErr) {
-      console.warn("bind-email: duplicate check error:", existingErr.message);
-    }
     if (existingUser) {
       return res.status(409).json({ error: "This email is already bound to another account" });
     }
 
-    // Step 1: Update email in users table first (critical for profile display)
-    const { error: profileErr } = await sbAdmin
+    // Step 1: Update email in users table (critical for profile display)
+    const { error: profileErr } = await sbUser
       .from("users")
       .update({ email: normalizedEmail })
       .eq("id", user.id);
@@ -76,19 +70,23 @@ module.exports = async (req, res) => {
       return res.status(500).json({ error: "Failed to save email: " + profileErr.message });
     }
 
-    // Step 2: Try to update email in Supabase Auth (non-critical)
-    const { error: updateErr } = await sbAdmin.auth.admin.updateUserById(
-      user.id, { email: normalizedEmail }
-    );
+    // Step 2: Try to update email in Supabase Auth (non-critical, needs service role key)
+    if (SUPABASE_SERVICE_ROLE_KEY) {
+      const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
 
-    if (updateErr) {
-      var errMsg = updateErr.message || "";
-      // If email is in use by another Auth user, still ok because users table is updated
-      if (errMsg.toLowerCase().indexOf("already") > -1 || errMsg.toLowerCase().indexOf("registered") > -1) {
-        return res.json({ success: true, message: "Email bound successfully (email is already registered with another account)" });
+      const { error: updateErr } = await sbAdmin.auth.admin.updateUserById(
+        user.id, { email: normalizedEmail }
+      );
+
+      if (updateErr) {
+        var errMsg = updateErr.message || "";
+        if (errMsg.toLowerCase().indexOf("already") > -1 || errMsg.toLowerCase().indexOf("registered") > -1) {
+          return res.json({ success: true, message: "Email bound successfully" });
+        }
+        console.warn("bind-email: Auth email update warning:", errMsg);
       }
-      // For other errors (e.g., service role key missing), the email is still in users table
-      console.warn("bind-email: Auth email update warning:", errMsg);
     }
 
     return res.json({ success: true, message: "Email bound successfully" });
