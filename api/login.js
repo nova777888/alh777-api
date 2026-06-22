@@ -150,7 +150,7 @@ module.exports = async (req, res) => {
 
     return res.json({
       success: true,
-      token: data.session?.access_token || "",
+      token: (data.data && data.data.session ? data.data.session.access_token : "") || "",
       user: profile || { 
         id: data.data.user.id, 
         email: successfulEmail,
