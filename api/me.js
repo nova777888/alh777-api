@@ -6,11 +6,13 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFo
 const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY || "96ad19dd1d302c46aceea0edf9759655090b762f947f81a6107382e9681784a0", "hex");
 
 function decryptPhone(encrypted) {
-  if (!encrypted || !encrypted.includes(":")) return null;
-  var parts = encrypted.split(":");
-  var iv = Buffer.from(parts[0], "hex");
-  var decipher = crypto.createDecipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
-  return decipher.update(parts[1], "hex", "utf8") + decipher.final("utf8");
+  try {
+    if (!encrypted || !encrypted.includes(":")) return null;
+    var parts = encrypted.split(":");
+    var iv = Buffer.from(parts[0], "hex");
+    var decipher = crypto.createDecipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
+    return decipher.update(parts[1], "hex", "utf8") + decipher.final("utf8");
+  } catch(e) { return null; }
 }
 
 module.exports = async (req, res) => {
