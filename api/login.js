@@ -1,4 +1,4 @@
-
+﻿
 const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
@@ -123,7 +123,7 @@ module.exports = async (req, res) => {
       const { data: profileById } = await sb
         .from("users")
         .select("*")
-        .eq("id", data.user.id)
+        .eq("id", data.data.user.id)
         .maybeSingle();
       
       if (profileById) {
@@ -152,11 +152,11 @@ module.exports = async (req, res) => {
       success: true,
       token: data.session?.access_token || "",
       user: profile || { 
-        id: data.user.id, 
+        id: data.data.user.id, 
         email: successfulEmail,
         name: (phoneOrAccount || loginEmail || ""),
         phone: phoneOrAccount || "",
-        referral_code: data.user.id ? data.user.id.substring(0, 6).toUpperCase() : ""
+        referral_code: data.data.user.id ? data.data.user.id.substring(0, 6).toUpperCase() : ""
       }
     });
     
