@@ -28,6 +28,7 @@ module.exports = async (req, res) => {
       name: (user.user_metadata && user.user_metadata.name) || "",
       phone: (user.user_metadata && user.user_metadata.phone) || "",
       referral_code: (user.user_metadata && user.user_metadata.referral_code) || user.id.substring(0, 6).toUpperCase(),
+      referred_by: null,
       balance: 0,
       downline_count: 0,
       phone_masked: "N/A",
