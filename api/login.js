@@ -84,8 +84,34 @@ module.exports = async (req, res) => {
       // Direct email login
       emailsToTry.push(loginEmail.toLowerCase().trim());
     } else if (phoneOrAccount) {
-      // Phone login - try all possible email formats
-      emailsToTry = generatePhoneEmails(phoneOrAccount);
+      // First, try to find the user by phone in the users table
+      // This handles old accounts that may have been registered with a different email format
+      var rawPhoneDigits = String(phoneOrAccount || "").replace(/[^0-9]/g, "");
+      if (rawPhoneDigits) {
+        try {
+          const lookupSb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: { autoRefreshToken: false, persistSession: false },
+            global: { headers: { apikey: SUPABASE_ANON_KEY } }
+          });
+          var { data: phoneMatch } = await lookupSb
+            .from("users")
+            .select("email")
+            .or("phone.eq." + phoneOrAccount + ",phone.eq.+" + rawPhoneDigits + ",phone.eq.0" + (rawPhoneDigits.length > 10 ? rawPhoneDigits.substring(rawPhoneDigits.length - 10) : rawPhoneDigits) + ",phone.eq." + rawPhoneDigits)
+            .maybeSingle();
+          if (phoneMatch && phoneMatch.email && phoneMatch.email.indexOf("@") > -1) {
+            emailsToTry.push(phoneMatch.email);
+          }
+        } catch (e) {
+          // users table lookup failed (RLS), fall through to format generation
+        }
+      }
+      // Also try all possible email formats (for new registrations)
+      var generatedEmails = generatePhoneEmails(phoneOrAccount);
+      for (var g = 0; g < generatedEmails.length; g++) {
+        if (emailsToTry.indexOf(generatedEmails[g]) === -1) {
+          emailsToTry.push(generatedEmails[g]);
+        }
+      }
     } else {
       return res.status(400).json({ error: "Phone number or email required" });
     }
