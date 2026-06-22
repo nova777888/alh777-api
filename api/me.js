@@ -1,7 +1,17 @@
 const { createClient } = require("@supabase/supabase-js");
+const crypto = require("crypto");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
+const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY || "96ad19dd1d302c46aceea0edf9759655090b762f947f81a6107382e9681784a0", "hex");
+
+function decryptPhone(encrypted) {
+  if (!encrypted || !encrypted.includes(":")) return null;
+  var parts = encrypted.split(":");
+  var iv = Buffer.from(parts[0], "hex");
+  var decipher = crypto.createDecipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
+  return decipher.update(parts[1], "hex", "utf8") + decipher.final("utf8");
+}
 
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
