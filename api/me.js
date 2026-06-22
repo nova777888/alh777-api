@@ -21,83 +21,64 @@ module.exports = async (req, res) => {
     const { data: { user }, error: userErr } = await sb.auth.getUser(token);
     if (userErr || !user) return res.status(401).json({ error: "Invalid token" });
 
-    // Build fallback user from Auth metadata
-    var fallbackUser = {
-      id: user.id,
-      email: user.email || "",
-      name: (user.user_metadata && user.user_metadata.name) || "",
-      phone: (user.user_metadata && user.user_metadata.phone) || "",
-      referral_code: (user.user_metadata && user.user_metadata.referral_code) || user.id.substring(0, 6).toUpperCase(),
-      referred_by: null,
-      balance: 0,
-      downline_count: 0,
-      phone_masked: "N/A",
-      created_at: user.created_at || new Date().toISOString()
-    };
-
-    // Try to get profile from users table
-    const { data: profile, error: profileErr } = await sb
-      .from("users")
+    // Get profile from customers table
+    const { data: profile } = await sb
+      .from("customers")
       .select("*")
       .eq("id", user.id)
       .maybeSingle();
 
+    // Get balance from customer_balances
+    const { data: balance } = await sb
+      .from("customer_balances")
+      .select("*")
+      .eq("customer_id", user.id)
+      .maybeSingle();
+
+    // Get downline count
+    const { count: downlineCount } = await sb
+      .from("customers")
+      .select("id", { count: "exact" })
+      .eq("parent_id", user.id);
+
     if (profile) {
-      // User found in users table - use profile data
-      if (profile.phone) {
-        var p = String(profile.phone);
-        profile.phone_masked = "********" + p.slice(-4);
-      } else {
-        profile.phone_masked = "N/A";
-      }
-
-      // Get downline count
-      const { count: downlineCount } = await sb
-        .from("users")
-        .select("id", { count: "exact" })
-        .eq("referred_by", user.id);
-      profile.downline_count = downlineCount || 0;
-
-      // Format balance as object
-      var balVal = typeof profile.balance === "number" ? profile.balance : 0;
-      profile.balance = {
-        available_balance: balVal,
-        total_earned: 0,
-        total_withdrawn: 0
-      };
-
-      return res.json({ success: true, user: profile });
-    }
-
-    // User not in users table - try by email
-    if (user.email) {
-      const { data: profileByEmail } = await sb
-        .from("users")
-        .select("*")
-        .eq("email", user.email.toLowerCase())
-        .maybeSingle();
-
-      if (profileByEmail) {
-        if (profileByEmail.phone) {
-          var p2 = String(profileByEmail.phone);
-          profileByEmail.phone_masked = "********" + p2.slice(-4);
+      var result = {
+        id: profile.id,
+        name: profile.name || "",
+        email: profile.email && profile.email.indexOf("@nogin.nova.local") === -1 ? profile.email : "",
+        phone: profile.phone_hash ? "********" + profile.phone_hash.slice(-4) : "N/A",
+        phone_masked: profile.phone_hash ? "********" + profile.phone_hash.slice(-4) : "N/A",
+        referral_code: profile.public_id || "",
+        referred_by: profile.parent_id || null,
+        downline_count: downlineCount || 0,
+        created_at: profile.created_at || "",
+        role: profile.role || "customer",
+        balance: {
+          available_balance: balance ? balance.available_balance : 0,
+          total_earned: balance ? balance.total_earned : 0,
+          total_withdrawn: balance ? balance.total_withdrawn : 0
         }
-
-        const { count: dlCount } = await sb
-          .from("users")
-          .select("id", { count: "exact" })
-          .eq("referred_by", profileByEmail.id);
-        profileByEmail.downline_count = dlCount || 0;
-
-        var balVal2 = typeof profileByEmail.balance === "number" ? profileByEmail.balance : 0;
-        profileByEmail.balance = { available_balance: balVal2, total_earned: 0, total_withdrawn: 0 };
-
-        return res.json({ success: true, user: profileByEmail });
-      }
+      };
+      return res.json({ success: true, user: result });
     }
 
-    // No profile found anywhere - return fallback from Auth metadata
-    return res.json({ success: true, user: fallbackUser });
+    // No profile found - return fallback from Auth metadata
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email || "",
+        name: (user.user_metadata && user.user_metadata.name) || "",
+        phone: "N/A",
+        phone_masked: "N/A",
+        referral_code: user.id.substring(0, 6).toUpperCase(),
+        referred_by: null,
+        downline_count: 0,
+        created_at: user.created_at || "",
+        role: "customer",
+        balance: { available_balance: 0, total_earned: 0, total_withdrawn: 0 }
+      }
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

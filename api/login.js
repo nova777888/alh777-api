@@ -7,6 +7,15 @@ function generatePhoneEmails(rawPhone) {
   var emails = [];
   var digits = String(rawPhone || "").replace(/[^0-9]/g, "");
   if (!digits) return emails;
+
+function normalizePhone(raw) {
+  var digs = String(raw || "").replace(/[^0-9]/g, "");
+  if (digs.length === 11 && digs.startsWith("0")) return "+234" + digs.substring(1);
+  if (digs.length === 10) return "+234" + digs;
+  if (digs.length === 13 && digs.startsWith("234")) return "+" + digs;
+  if (!digs.startsWith("+")) return "+" + digs;
+  return digs;
+}
   
   // Collect all possible formats
   var formats = [];
@@ -94,9 +103,9 @@ module.exports = async (req, res) => {
             global: { headers: { apikey: SUPABASE_ANON_KEY } }
           });
           var { data: phoneMatch } = await lookupSb
-            .from("users")
+            .from("customers")
             .select("email")
-            .or("phone.eq." + phoneOrAccount + ",phone.eq.+" + rawPhoneDigits + ",phone.eq.0" + (rawPhoneDigits.length > 10 ? rawPhoneDigits.substring(rawPhoneDigits.length - 10) : rawPhoneDigits) + ",phone.eq." + rawPhoneDigits)
+            .eq("phone_hash", require("crypto").createHash("sha256").update(normalizePhone(phoneOrAccount)).digest("hex"))
             .maybeSingle();
           if (phoneMatch && phoneMatch.email && phoneMatch.email.indexOf("@") > -1) {
             emailsToTry.push(phoneMatch.email);
@@ -155,7 +164,7 @@ module.exports = async (req, res) => {
     var profile = null;
     try {
       const { data: profileById } = await sb
-        .from("users")
+        .from("customers")
         .select("*")
         .eq("id", data.data.user.id)
         .maybeSingle();
@@ -165,7 +174,7 @@ module.exports = async (req, res) => {
       } else {
         // Try by email - try the auth email and other variations
         const { data: profileByEmail } = await sb
-          .from("users")
+          .from("customers")
           .select("*")
           .eq("email", successfulEmail)
           .maybeSingle();

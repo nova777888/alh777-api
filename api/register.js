@@ -1,21 +1,39 @@
 const { createClient } = require("@supabase/supabase-js");
+const crypto = require("crypto");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
+const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY || "96ad19dd1d302c46aceea0edf9759655090b762f947f81a6107382e9681784a0", "hex");
 
-async function generateReferralCode(sb) {
-  var code = '';
-  var maxAttempts = 20;
-  for (var attempt = 0; attempt < maxAttempts; attempt++) {
-    var digits = '';
-    for (var d = 0; d < 4; d++) {
-      digits += Math.floor(Math.random() * 10).toString();
-    }
-    code = 'VIP' + digits;
-    var { data: existing } = await sb.from('users').select('id').eq('referral_code', code).maybeSingle();
-    if (!existing) return code;
+function encryptPhone(phone) {
+  var iv = crypto.randomBytes(16);
+  var cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
+  var encrypted = cipher.update(phone, "utf8", "hex") + cipher.final("hex");
+  return iv.toString("hex") + ":" + encrypted;
+}
+
+function hashPhone(phone) {
+  return crypto.createHash("sha256").update(phone).digest("hex");
+}
+
+function normalizePhone(raw) {
+  var digits = String(raw || "").replace(/[^0-9]/g, "");
+  if (digits.length === 11 && digits.startsWith("0")) return "+234" + digits.substring(1);
+  if (digits.length === 10) return "+234" + digits;
+  if (digits.length === 13 && digits.startsWith("234")) return "+" + digits;
+  if (!digits.startsWith("+")) return "+" + digits;
+  return digits;
+}
+
+async function generatePublicId(sb) {
+  var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  for (var attempt = 0; attempt < 20; attempt++) {
+    var id = "";
+    for (var i = 0; i < 7; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
+    var { data: existing } = await sb.from("customers").select("id").eq("public_id", id).maybeSingle();
+    if (!existing) return id;
   }
-  return code + '_' + Date.now().toString(36).toUpperCase().substring(0, 3);
+  return "VIP" + Date.now().toString(36).toUpperCase().substring(0, 4);
 }
 
 module.exports = async (req, res) => {
@@ -34,212 +52,127 @@ module.exports = async (req, res) => {
 
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
-      global: {
-        headers: {
-          apikey: SUPABASE_ANON_KEY
-        }
-      }
+      global: { headers: { apikey: SUPABASE_ANON_KEY } }
     });
 
+    var normPhone = normalizePhone(phone);
+    var phoneHash = hashPhone(normPhone);
+    var phoneEncrypted = encryptPhone(normPhone);
     const emailLower = email ? email.toLowerCase() : null;
 
-    // If referral_code is provided, look up the referrer's user ID
-    var referredById = null;
-    if (referral_code) {
-      const { data: referrer } = await sb
-        .from("users")
-        .select("id, referral_code")
-        .eq("referral_code", referral_code)
-        .single();
-      if (referrer && referrer.id) {
-        referredById = referrer.id;
-      }
+    // Check duplicate phone
+    var { data: existingByPhone } = await sb.from("customers").select("id").eq("phone_hash", phoneHash).maybeSingle();
+    if (existingByPhone) {
+      return res.status(409).json({ error: "This phone number is already registered" });
     }
 
-    // If email is provided, sign up via Supabase Auth
+    // Look up referrer
+    var parentId = null;
+    if (referral_code) {
+      var { data: referrer } = await sb.from("customers").select("id").eq("public_id", referral_code).maybeSingle();
+      if (referrer && referrer.id) parentId = referrer.id;
+    }
+
+    var publicId = await generatePublicId(sb);
+
     if (emailLower) {
-      const { data: signUpData, error: signUpError } = await sb.auth.signUp({
+      var { data: signUpData, error: signUpError } = await sb.auth.signUp({
         email: emailLower,
         password,
-        options: {
-          data: {
-            name: name || "",
-            phone: phone || "",
-            referral_code: referral_code || ""
-          }
-        }
+        options: { data: { name, phone: normPhone } }
       });
 
       if (signUpError) {
-        // ... existing error handling ...
-        if (signUpError.message.toLowerCase().includes("rate limit") || signUpError.message.toLowerCase().includes("too many")) {
-          return res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
+        if (signUpError.message.toLowerCase().includes("rate limit")) {
+          return res.status(429).json({ error: "Too many requests. Please wait." });
         }
-        
         if (signUpError.message.toLowerCase().includes("already") || signUpError.code === "user_already_exists") {
-          // Check if this phone number already owns this email in the users table
-          const { data: existingUser } = await sb
-            .from("users")
-            .select("id, phone, email")
-            .eq("email", emailLower)
-            .maybeSingle();
-          
-          if (existingUser && existingUser.phone === phone) {
-            const { data: signInData, error: signInError } = await sb.auth.signInWithPassword({
-              email: emailLower,
-              password
-            });
-            if (signInError) {
-              return res.status(401).json({ error: "Invalid password" });
-            }
-            return res.json({
-              success: true,
-              token: signInData.session?.access_token || "",
-              user: existingUser
-            });
-          }
-          
-          return res.status(409).json({ error: "This email is already registered to another account. Please use a different email or login with your existing account." });
+          return res.status(409).json({ error: "This email is already registered. Please login." });
         }
-        
         return res.status(500).json({ error: signUpError.message });
       }
 
       if (!signUpData.user) return res.status(500).json({ error: "Signup failed" });
 
-      var referral = referral_code || await generateReferralCode(sb);
-      
-      const userRecord = {
+      var customerRecord = {
         id: signUpData.user.id,
-        name: name || "",
-        phone: phone || "",
+        name: name,
+        phone_encrypted: phoneEncrypted,
+        phone_hash: phoneHash,
         email: emailLower,
-        referral_code: referral,
-        balance: 0,
+        public_id: publicId,
+        role: "customer",
+        is_active: true,
+        referrer_locked: false,
         created_at: new Date().toISOString()
       };
-      if (referredById) { try { userRecord.referred_by = referredById; } catch(e) {} }
+      if (parentId) customerRecord.parent_id = parentId;
 
-      const { error: profileError } = await sb
-        .from("users")
-        .upsert([userRecord], { onConflict: "id" });
-      if (profileError && profileError.message && profileError.message.indexOf("referred_by") > -1) {
-        delete userRecord.referred_by;
-        const { error: retryErr } = await sb.from("users").upsert([userRecord], { onConflict: "id" });
-        if (retryErr && retryErr.code !== "23505") console.warn("Profile upsert retry warning:", retryErr.message);
-      }
+      await sb.from("customers").insert(customerRecord).catch(function(e) { console.warn("customer insert:", e.message); });
+      await sb.from("customer_balances").insert({
+        customer_id: signUpData.user.id,
+        available_balance: 0,
+        total_earned: 0,
+        total_withdrawn: 0
+      }).catch(function() {});
 
-      if (profileError && profileError.code !== "23505") {
-        console.warn("Profile upsert warning:", profileError.message);
-      }
-
-      const { data: signInData, error: signInError } = await sb.auth.signInWithPassword({
-        email: emailLower,
-        password
-      });
-
-      if (signInError) {
+      var { data: signInData } = await sb.auth.signInWithPassword({ email: emailLower, password });
+      if (!signInData || !signInData.session) {
         return res.json({
-          success: true,
-          token: "",
-          user: {
-            id: signUpData.user.id,
-            name: name,
-            email: emailLower,
-            phone: phone || "",
-            referral_code: referral,
-            needs_email_confirmation: true
-          },
-          message: "Registration successful. Please check your email to confirm your account, then login."
+          success: true, token: "",
+          user: { id: signUpData.user.id, name, email: emailLower, phone: normPhone, referral_code: publicId, needs_email_confirmation: true },
+          message: "Please check your email to confirm your account, then login."
         });
       }
 
-      const { data: profile } = await sb.from("users").select("*").eq("email", emailLower).single();
       return res.json({
         success: true,
-        token: signInData.session?.access_token || "",
-        user: profile || { id: signInData.user.id, name, email: emailLower, phone }
+        token: signInData.session.access_token,
+        user: { id: signUpData.user.id, name, email: emailLower, phone: normPhone, referral_code: publicId }
       });
     } else {
-      // No email provided
-      var normPhone = String(phone || "").replace(/[^0-9]/g, "");
-    if (normPhone.length === 11 && normPhone.startsWith("0")) {
-      normPhone = "+234" + normPhone.substring(1);
-    } else if (normPhone.length === 10) {
-      normPhone = "+234" + normPhone;
-    } else if (normPhone.length === 13 && normPhone.startsWith("234")) {
-      normPhone = "+" + normPhone;
-    } else if (normPhone.length < 10) {
-      normPhone = phone;
-    } else if (!normPhone.startsWith("+")) {
-      normPhone = "+" + normPhone;
-    }
-    const genEmail = normPhone + "@nogin.nova.local";
-      var referral = referral_code || await generateReferralCode(sb);
-
-      const { data: signUpData, error: signUpError } = await sb.auth.signUp({
-        email: genEmail,
-        password,
-        options: {
-          data: {
-            name: name || "",
-            phone: phone || "",
-            referral_code: referral
-          }
-        }
+      var genEmail = normPhone + "@nogin.nova.local";
+      var { data: signUpData, error: signUpError } = await sb.auth.signUp({
+        email: genEmail, password,
+        options: { data: { name, phone: normPhone } }
       });
 
       if (signUpError) {
-        if (signUpError.message.toLowerCase().includes("rate limit") || signUpError.message.toLowerCase().includes("too many")) {
-          return res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
-        }
+        if (signUpError.message.toLowerCase().includes("rate limit")) return res.status(429).json({ error: "Too many requests." });
         return res.status(500).json({ error: signUpError.message });
       }
-
       if (!signUpData.user) return res.status(500).json({ error: "Signup failed" });
 
-      const userRecord = {
+      var customerRecord = {
         id: signUpData.user.id,
-        name: name || "",
-        phone: phone || "",
+        name: name,
+        phone_encrypted: phoneEncrypted,
+        phone_hash: phoneHash,
         email: genEmail,
-        referral_code: referral,
-        balance: 0,
+        public_id: publicId,
+        role: "customer",
+        is_active: true,
+        referrer_locked: false,
         created_at: new Date().toISOString()
       };
-      if (referredById) { try { userRecord.referred_by = referredById; } catch(e) {} }
+      if (parentId) customerRecord.parent_id = parentId;
 
-      const { error: profileError } = await sb
-        .from("users")
-        .upsert([userRecord], { onConflict: "id" });
-      if (profileError && profileError.message && profileError.message.indexOf("referred_by") > -1) {
-        delete userRecord.referred_by;
-        const { error: retryErr } = await sb.from("users").upsert([userRecord], { onConflict: "id" });
-        if (retryErr && retryErr.code !== "23505") console.warn("Profile upsert retry warning:", retryErr.message);
-      }
+      await sb.from("customers").insert(customerRecord).catch(function(e) { console.warn("customer insert:", e.message); });
+      await sb.from("customer_balances").insert({
+        customer_id: signUpData.user.id,
+        available_balance: 0, total_earned: 0, total_withdrawn: 0
+      }).catch(function() {});
 
-      if (profileError && profileError.code !== "23505") {
-        console.warn("Profile upsert warning:", profileError.message);
-      }
+      var { data: signInData, error: signInError } = await sb.auth.signInWithPassword({ email: genEmail, password });
+      if (signInError) return res.status(500).json({ error: "Login after signup failed" });
 
-      const { data: signInData, error: signInError } = await sb.auth.signInWithPassword({
-        email: genEmail,
-        password
-      });
-
-      if (signInError) {
-        return res.status(500).json({ error: "Login after signup failed" });
-      }
-
-      const { data: profile } = await sb.from("users").select("*").eq("phone", phone).single();
       return res.json({
         success: true,
-        token: signInData.session?.access_token || "",
-        user: profile || { id: signInData.user.id, name, phone, referral_code: referral }
+        token: signInData.session.access_token,
+        user: { id: signUpData.user.id, name, phone: normPhone, referral_code: publicId }
       });
     }
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 };
-

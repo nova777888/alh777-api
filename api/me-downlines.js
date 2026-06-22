@@ -28,14 +28,14 @@ module.exports = async (req, res) => {
     var monthFilter = req.query.month || "";
 
     // Get total downline count for this user
-    var countQuery = sb.from("users").select("id", { count: "exact" }).eq("referred_by", user.id);
+    var countQuery = sb.from("customers").select("id", { count: "exact" }).eq("parent_id", user.id);
     const { count: totalCount } = await countQuery;
 
     // Get downlines with pagination
     var dlQuery = sb
-      .from("users")
+      .from("customers")
       .select("id, name, email, phone, created_at, referral_code")
-      .eq("referred_by", user.id)
+      .eq("parent_id", user.id)
       .order("created_at", { ascending: false });
 
     const { data: downlines, error: dlErr } = await dlQuery.range(offset, offset + limit - 1);
