@@ -41,6 +41,10 @@ module.exports = async (req, res) => {
 
     var normalizedEmail = email.toLowerCase().trim();
 
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: "Server configuration error: service role key not configured" });
+    }
+
     const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false }
     });

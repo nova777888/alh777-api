@@ -48,7 +48,7 @@ module.exports = async (req, res) => {
         }
       }
 
-      const { error: updateError } = await (sbCheck || sb).auth.updateUser({ password: newPwd });
+      const { error: updateError } = await sb.auth.updateUser({ password: newPwd });
       if (updateError) return res.status(500).json({ error: updateError.message });
 
       return res.json({ success: true, message: "Password changed successfully" });
