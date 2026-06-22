@@ -1,4 +1,4 @@
-﻿const { createClient } = require("@supabase/supabase-js");
+const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
@@ -16,7 +16,7 @@ module.exports = async (req, res) => {
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: \Bearer \\ } }
+      global: { headers: { Authorization: "Bearer " + token } }
     });
 
     const { data: { user } } = await sb.auth.getUser(token);
