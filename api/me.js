@@ -31,7 +31,7 @@ module.exports = async (req, res) => {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { apikey: srk } }
     });
-    var action = req.query.action || "list";
+    var action = req.query.action || "decrypt";
     if (action === "decrypt") {
       var { data: customers, error } = await sbAdmin.from('customers').select('id,name,phone_encrypted,public_id,parent_id,telegram_id,created_at').limit(5000);
       if (error) return res.status(500).json({ error: error.message });
