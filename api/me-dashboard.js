@@ -80,13 +80,10 @@ module.exports = async (req, res) => {
       }
     });
   } catch (err) {
-    return res.json({
-      success: true,
-      data: {
-        available_balance: 0, total_earned: 0, total_withdrawn: 0,
-        pending_commission: 0, downline_count: 0, today_volume: 0,
-        month_commission: 0, transaction_count: 0, total_volume: 0
-      }
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+      stack: err.stack
     });
   }
 };
