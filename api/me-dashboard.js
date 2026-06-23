@@ -42,8 +42,8 @@ module.exports = async (req, res) => {
     // Get commissions stats
     const { data: commissions } = await sb
       .from("commissions")
-      .select("amount, status, created_at")
-      .eq("referrer_id", user.id);
+      .select("commission, settled, created_at")
+      .eq("customer_id", user.id);
 
     var pendingCommission = 0;
     var settledCommission = 0;
@@ -55,12 +55,12 @@ module.exports = async (req, res) => {
       var nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
 
       for (var j = 0; j < commissions.length; j++) {
-        var amt = parseFloat(commissions[j].amount) || 0;
-        var status = commissions[j].status;
+        var amt = parseFloat(commissions[j].commission) || 0;
+        var settled = commissions[j].settled;
         var created = commissions[j].created_at || "";
 
-        if (status === "pending" || status === "processing") pendingCommission += amt;
-        else if (status === "settled" || status === "completed") settledCommission += amt;
+        if (settled === false || settled === null || settled === undefined) pendingCommission += amt;
+        else if (settled === true) settledCommission += amt;
 
         if (created >= monthStart && created < nextMonth) monthlyCommission += amt;
       }
