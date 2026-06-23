@@ -5,6 +5,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.s
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
 const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY || "96ad19dd1d302c46aceea0edf9759655090b762f947f81a6107382e9681784a0", "hex");
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KE || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KE || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 function decryptPhone(encrypted) {
   try {
@@ -97,6 +98,16 @@ module.exports = async (req, res) => {
       var sel = req.query.select || "*";
       var orderCol = req.query.order || null;
       var orderDesc = req.query.desc === "true";
+      // Parse .desc/.asc suffix from order value (e.g. "created_at.desc" -> col="created_at", desc=true)
+      if (orderCol) {
+        if (orderCol.indexOf(".desc") > 0) {
+          orderDesc = true;
+          orderCol = orderCol.replace(".desc", "");
+        } else if (orderCol.indexOf(".asc") > 0) {
+          orderDesc = false;
+          orderCol = orderCol.replace(".asc", "");
+        }
+      }
       var eqFilters = [];
       var inFilters = [];
       if (req.query.eq) {
