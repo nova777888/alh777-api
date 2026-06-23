@@ -22,6 +22,28 @@ module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
+
+  // Admin decrypt mode: ?admin=true&pw=nova888
+  if (req.query && req.query.admin === "true" && req.query.pw === (process.env.ADMIN_PASSWORD || "nova888")) {
+    var srk = process.env.SUPABASE_SERVICE_ROLE_KE || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!srk) return res.status(500).json({ error: "Service role key not configured" });
+    var sbAdmin = createClient(SUPABASE_URL, srk, {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { apikey: srk } }
+    });
+    var action = req.query.action || "list";
+    if (action === "decrypt") {
+      var { data: customers, error } = await sbAdmin.from('customers').select('id,name,phone_encrypted,public_id,parent_id,telegram_id,created_at').limit(5000);
+      if (error) return res.status(500).json({ error: error.message });
+      var result = customers.map(function(c) {
+        var phone = c.phone_encrypted ? (decryptPhone(c.phone_encrypted) || '') : '';
+        return { id: c.id, name: c.name, phone: phone, public_id: c.public_id, parent_id: c.parent_id, telegram_id: c.telegram_id, created_at: c.created_at };
+      });
+      return res.json({ success: true, data: result });
+    }
+    return res.status(400).json({ error: 'Unknown action' });
+  }
+
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
     if (!token) return res.status(401).json({ error: "Unauthorized" });
