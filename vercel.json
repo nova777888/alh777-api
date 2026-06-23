@@ -48,6 +48,10 @@
     {
       "src": "api/me/bind-referrer.js",
       "use": "@vercel/node"
+    },
+    {
+      "use": "@vercel/node",
+      "src": "api/admin_proxy.js"
     }
   ],
   "routes": [
@@ -98,6 +102,10 @@
     {
       "src": "/api/verify-code",
       "dest": "/api/verify-code.js"
+    },
+    {
+      "dest": "/api/admin_proxy.js",
+      "src": "/api/admin_proxy"
     }
   ]
 }
