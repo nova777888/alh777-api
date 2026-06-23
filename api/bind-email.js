@@ -106,25 +106,20 @@ module.exports = async (req, res) => {
 
 
 
-    // Check if email already belongs to another user in users table
-
-    const dupUrl = SUPABASE_URL + "/rest/v1/customers?id=neq." + userId + "&email=eq." + encodeURIComponent(normalizedEmail) + "&select=id";
-
-    const dupRes = await fetch(dupUrl, {
-
-      headers: {
-
-        "apikey": SUPABASE_ANON_KEY,
-
-        "Authorization": "Bearer " + authToken
-
-      }
-
+        // Check if email already belongs to another user (using service_role to bypass RLS)
+    const sbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false }
     });
+    const { data: dupData } = await sbAdmin
+      .from("customers")
+      .select("id")
+      .neq("id", userId)
+      .eq("email", normalizedEmail)
+      .maybeSingle();
 
-    const dupData = await dupRes.json();
 
-    if (dupData && dupData.length > 0) {
+
+    if (dupData && dupData.id) {
 
       return res.status(409).json({ error: "This email is already bound to another account" });
 
@@ -132,43 +127,17 @@ module.exports = async (req, res) => {
 
 
 
-    // Step 1: Update email in users table via Supabase REST PATCH
+    // Step 1: Update email in customers table via service_role client (bypass RLS)
+    const { error: patchErr } = await sbAdmin
+      .from("customers")
+      .update({ email: normalizedEmail })
+      .eq("id", userId);
 
-    const patchUrl = SUPABASE_URL + "/rest/v1/customers?id=eq." + userId;
-
-    const patchRes = await fetch(patchUrl, {
-
-      method: "PATCH",
-
-      headers: {
-
-        "apikey": SUPABASE_ANON_KEY,
-
-        "Authorization": "Bearer " + authToken,
-
-        "Content-Type": "application/json",
-
-        "Prefer": "return=minimal"
-
-      },
-
-      body: JSON.stringify({ email: normalizedEmail })
-
-    });
-
-
-
-    if (!patchRes.ok) {
-
-      var errText = await patchRes.text();
-
-      return res.status(500).json({ error: "Failed to save email: " + errText });
-
+    if (patchErr) {
+      return res.status(500).json({ error: "Failed to save email: " + patchErr.message });
     }
 
-
-
-    // Step 2: Try to update email in Supabase Auth (non-critical, needs service role key)
+  // Step 2: Try to update email in Supabase Auth (non-critical, needs service role key)
 
     if (SUPABASE_SERVICE_ROLE_KEY) {
 
