@@ -80,11 +80,18 @@ module.exports = async (req, res) => {
       .eq("customer_id", user.id)
       .maybeSingle();
 
-    // Get downline count
-    const { count: downlineCount } = await sb
+    // Get downline count (all 4 levels)
+    var { data: allCusts } = await sb
       .from("customers")
-      .select("id", { count: "exact" })
-      .eq("parent_id", user.id);
+      .select("id,parent_id");
+    var downlineCount = 0;
+    var current = [user.id];
+    for(var lvl=0; lvl<4; lvl++) {
+      var next = (allCusts||[]).filter(function(x){ return current.indexOf(x.parent_id) !== -1; }).map(function(x){ return x.id; });
+      downlineCount += next.length;
+      current = next;
+      if(next.length===0) break;
+    }
 
     if (profile) {
       var result = {
