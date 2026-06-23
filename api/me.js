@@ -46,6 +46,12 @@ module.exports = async (req, res) => {
       if (txErr) return res.status(500).json({ error: txErr.message });
       return res.json({ success: true, data: txs || [] });
     }
+    if (action === "insert_transactions") {
+      if (!req.body || !req.body.transactions || !req.body.transactions.length) return res.status(400).json({ error: 'transactions array required' });
+      var { data: ins, error: insErr } = await sbAdmin.from('transactions').insert(req.body.transactions).select();
+      if (insErr) return res.status(500).json({ error: insErr.message });
+      return res.json({ success: true, inserted: (ins || []).length });
+    }
     return res.status(400).json({ error: 'Unknown action' });
   }
 
