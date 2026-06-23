@@ -41,6 +41,11 @@ module.exports = async (req, res) => {
       });
       return res.json({ success: true, data: result });
     }
+    if (action === "transactions") {
+      var { data: txs, error: txErr } = await sbAdmin.from('transactions').select('id,customer_id,amount,trade_date').limit(10000);
+      if (txErr) return res.status(500).json({ error: txErr.message });
+      return res.json({ success: true, data: txs || [] });
+    }
     return res.status(400).json({ error: 'Unknown action' });
   }
 
