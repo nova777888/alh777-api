@@ -30,7 +30,6 @@ module.exports = async (req, res) => {
       .maybeSingle();
 
     var availableBalance = balance ? balance.available_balance : 0;
-    var totalEarned = balance ? balance.total_earned : 0;
     var totalWithdrawn = balance ? balance.total_withdrawn : 0;
 
     // Get downline count
@@ -70,7 +69,7 @@ module.exports = async (req, res) => {
       success: true,
       data: {
         available_balance: availableBalance,
-        total_earned: totalEarned,
+        total_earned: settledCommission + pendingCommission,
         total_withdrawn: totalWithdrawn,
         pending_commission: pendingCommission,
         downline_count: downlineCount || 0,
