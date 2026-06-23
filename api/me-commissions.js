@@ -23,7 +23,7 @@ module.exports = async (req, res) => {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const { data: { user } } = await sbDataAuth.auth.getUser(token);
+    const { data: { user } } = await sbAuth.auth.getUser(token);
     if (!user) return res.status(401).json({ error: "Invalid token" });
 
     const downlineId = req.query.downline_id;
