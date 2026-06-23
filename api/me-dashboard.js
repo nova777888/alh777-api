@@ -1,6 +1,7 @@
 const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KE || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 module.exports = async (req, res) => {
@@ -15,15 +16,18 @@ module.exports = async (req, res) => {
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
-    const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+        const sbAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: "Bearer " + token } }
     });
-
-    const { data: { user }, error: userErr } = await sb.auth.getUser(token);
+    const sbData = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+    
+    const { data: { user }, error: userErr } = await sbAuth.auth.getUser(token);
     if (userErr || !user) return res.status(401).json({ error: "Invalid token" });
 
     // Get balance from customer_balances
-    const { data: balance } = await sb
+    const { data: balance } = await sbData
       .from("customer_balances")
       .select("*")
       .eq("customer_id", user.id)
@@ -33,13 +37,13 @@ module.exports = async (req, res) => {
     var totalWithdrawn = balance ? balance.total_withdrawn : 0;
 
     // Get downline count
-    const { count: downlineCount } = await sb
+    const { count: downlineCount } = await sbData
       .from("customers")
       .select("id", { count: "exact" })
       .eq("parent_id", user.id);
 
     // Get commissions stats
-    const { data: commissions } = await sb
+    const { data: commissions } = await sbData
       .from("commissions")
       .select("commission, settled, created_at")
       .eq("customer_id", user.id);
