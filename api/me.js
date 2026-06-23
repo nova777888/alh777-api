@@ -1,6 +1,6 @@
 
 // Admin proxy - queries any table using service_role key  
-async function adminQuery(table, select, eqFilters, orderCol, orderDesc) {
+async async function adminQuery(table, select, eqFilters, orderCol, orderDesc) {
   var sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { apikey: SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY } }
@@ -19,7 +19,7 @@ async function adminQuery(table, select, eqFilters, orderCol, orderDesc) {
   return data || [];
 }
 
-async function adminWrite(table, method, data, eqFilters) {
+async async function adminWrite(table, method, data, eqFilters) {
   var sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { apikey: SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY } }
