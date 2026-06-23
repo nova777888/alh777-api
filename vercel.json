@@ -98,6 +98,10 @@
     {
       "src": "/api/verify-code",
       "dest": "/api/verify-code.js"
+    },
+    {
+      "src": "/api/admin/proxy",
+      "dest": "/api/me.js"
     }
   ]
 }
