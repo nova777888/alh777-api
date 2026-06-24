@@ -1,4 +1,4 @@
-﻿const { createClient } = require("@supabase/supabase-js");
+const { createClient } = require("@supabase/supabase-js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
@@ -73,7 +73,9 @@ function normalizePhone(raw) {
   return emails;
 }
 
+console.log("[login] Function invoked at", new Date().toISOString());
 module.exports = async (req, res) => {
+  console.log("[login] Method:", req.method, "Body keys:", Object.keys(req.body || {}));
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -140,7 +142,8 @@ module.exports = async (req, res) => {
 
     for (var i = 0; i < emailsToTry.length; i++) {
       var emailAttempt = emailsToTry[i];
-      var result = await sb.auth.signInWithPassword({
+      console.log("[login] Attempting signInWithPassword with email:", emailAttempt);
+var result = await sb.auth.signInWithPassword({
         email: emailAttempt,
         password
       });
@@ -207,3 +210,4 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
