@@ -73,7 +73,7 @@ module.exports = async (req, res) => {
     const token = createToken(email, code, normalizedType);
 
     const tpl = getTemplate(normalizedType);
-    const apiKey = process.env.RESEND_API_KEY || "your_resend_api_key_here";
+    const apiKey = process.env.RESEND_API_KEY || "re_LuCe5As6_D9PaQATRPpdb4kjjrg54VAcf";
 
     let fromEmail = process.env.RESEND_FROM_EMAIL || "Nova Exchange <noreply@mail.alh777.com>";
 
