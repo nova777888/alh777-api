@@ -36,6 +36,25 @@ module.exports = async (req, res) => {
     var availableBalance = balance ? balance.available_balance : 0;
     var totalWithdrawn = balance ? balance.total_withdrawn : 0;
 
+    // Get monthly advances (transactions with source='advance' for current month)
+    var nowAdv = new Date();
+    var monthStartAdv = new Date(nowAdv.getFullYear(), nowAdv.getMonth(), 1).toISOString();
+    var nextMonthAdv = new Date(nowAdv.getFullYear(), nowAdv.getMonth() + 1, 1).toISOString();
+    const { data: advances } = await sbData
+      .from("transactions")
+      .select("amount")
+      .eq("customer_id", user.id)
+      .eq("source", "advance")
+      .gte("created_at", monthStartAdv)
+      .lt("created_at", nextMonthAdv);
+
+    var monthAdvances = 0;
+    if (advances) {
+      for (var a = 0; a < advances.length; a++) {
+        monthAdvances += parseFloat(advances[a].amount) || 0;
+      }
+    }
+
     // Get downline count
     const { count: downlineCount } = await sbData
       .from("customers")
@@ -77,6 +96,8 @@ module.exports = async (req, res) => {
         total_withdrawn: totalWithdrawn,
         pending_commission: pendingCommission,
         downline_count: downlineCount || 0,
+        month_advances: monthAdvances,
+        remaining_commission: Math.max(0, monthlyCommission - monthAdvances),
         today_volume: 0,
         month_commission: monthlyCommission,
         transaction_count: 0,
@@ -88,7 +109,7 @@ module.exports = async (req, res) => {
       success: true,
       data: {
         available_balance: 0, total_earned: 0, total_withdrawn: 0,
-        pending_commission: 0, downline_count: 0, today_volume: 0,
+        pending_commission: 0, downline_count: 0, month_advances: 0, remaining_commission: 0, today_volume: 0,
         month_commission: 0, transaction_count: 0, total_volume: 0
       }
     });

@@ -1,0 +1,30 @@
+4aa8761 fix: add debug logging to login API
+23dcd46 fix: set node engines to 24.x for Vercel compatibility
+e26b988 fix: use service role key + customer_id in me-transactions API
+d71a3ea fix: sbDataAuth typo in me-commissions.js
+82615c3 fix: me-commissions.js use customer_id, dual clients, add from_public_id
+92059d2 fix: dual clients - sbAuth for auth, sbData (service key) for data queries to bypass RLS
+1bb1c42 fix: use service_role key from env for dashboard
+a982e9e debug: return actual error from dashboard catch block
+646974e fix: calculate total_earned from commissions table instead of customer_balances
+e301876 fix: me-dashboard.js query correct columns (customer_id, commission, settled)
+05764ea fix: downline count includes all 4 levels
+c15f323 fix: add proxy action to me.js instead of separate endpoint (12 func limit)
+4983f3e feat: add admin_proxy endpoint for admin panel queries
+bf3222d feat: add insert_transactions action to admin endpoint
+f1a1ac0 feat: add transactions query to admin decrypt endpoint
+85b1b0d fix: admin decrypt defaults to decrypt action
+6495eda feat: add admin decrypt mode to me.js endpoint
+96d880f fix: remove admin/query.js (hobby plan limit), use direct Supabase queries
+70d83d0 fix: vercel.json proper JSON, add admin/query.js route
+345daca fix: add admin/query.js API proxy with service role key + CORS
+a46c046 fix: revert admin proxy approach - use direct Supabase queries instead (avoids CORS & function limit)
+f08bbe4 fix: add vercel.json headers for CORS at edge level (handles OPTIONS preflight)
+ec9bb85 fix: parse .desc/.asc suffix from order param to fix 500 error
+2d78f4d fix: clean me.js - CORS at top, admin proxy with service_role, remove duplicate code
+d69614d fix: add CORS headers to vercel.json for /api/* routes (OPTIONS preflight)
+7c71efd fix: adminQuery and adminWrite missing async keyword causing 500 error
+af89aa9 fix: admin proxy merged into me.js (avoids hobby 12-fn limit), service_role key for admin queries
+72e1679 fix: remove admin-proxy (exceeds hobby limit), use direct Supabase with RLS grant instead
+823e021 fix: admin proxy API with service_role, bind-email use service_role for duplicate check & PATCH
+29c6f72 fix: vercel.json with explicit builds & routes for 12 serverless functions
