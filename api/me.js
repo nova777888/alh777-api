@@ -1,0 +1,138 @@
+const { createClient } = require("@supabase/supabase-js");
+const crypto = require("crypto");
+
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_qZmFog48wGY8aMzEzl3P2Q_bFktF5X3";
+const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY || "96ad19dd1d302c46aceea0edf9759655090b762f947f81a6107382e9681784a0", "hex");
+
+function decryptPhone(encrypted) {
+  try {
+    if (!encrypted || !encrypted.includes(":")) return null;
+    var parts = encrypted.split(":");
+    var iv = Buffer.from(parts[0], "hex");
+    var decipher = crypto.createDecipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
+    return decipher.update(parts[1], "hex", "utf8") + decipher.final("utf8");
+  } catch(e) { return null; }
+}
+
+module.exports = async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  try {
+
+  // Admin decrypt mode: ?admin=true&pw=nova888
+  if (req.query && req.query.admin === "true" && req.query.pw === (process.env.ADMIN_PASSWORD || "nova888")) {
+    var srk = process.env.SUPABASE_SERVICE_ROLE_KE || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    if (!srk) return res.status(500).json({ error: "Service role key not configured" });
+    var sbAdmin = createClient(SUPABASE_URL, srk, {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { apikey: srk } }
+    });
+    var action = req.query.action || "decrypt";
+    if (action === "decrypt") {
+      var { data: customers, error } = await sbAdmin.from('customers').select('id,name,phone_encrypted,public_id,parent_id,telegram_id,created_at').limit(5000);
+      if (error) return res.status(500).json({ error: error.message });
+      var result = customers.map(function(c) {
+        var phone = c.phone_encrypted ? (decryptPhone(c.phone_encrypted) || '') : '';
+        return { id: c.id, name: c.name, phone: phone, public_id: c.public_id, parent_id: c.parent_id, telegram_id: c.telegram_id, created_at: c.created_at };
+      });
+      return res.json({ success: true, data: result });
+    }
+    if (action === "transactions") {
+      var { data: txs, error: txErr } = await sbAdmin.from('transactions').select('id,customer_id,amount,trade_date').limit(10000);
+      if (txErr) return res.status(500).json({ error: txErr.message });
+      return res.json({ success: true, data: txs || [] });
+    }
+    if (action === "insert_transactions") {
+      if (!req.body || !req.body.transactions || !req.body.transactions.length) return res.status(400).json({ error: 'transactions array required' });
+      var { data: ins, error: insErr } = await sbAdmin.from('transactions').insert(req.body.transactions).select();
+      if (insErr) return res.status(500).json({ error: insErr.message });
+      return res.json({ success: true, inserted: (ins || []).length });
+    }
+    return res.status(400).json({ error: 'Unknown action' });
+  }
+
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: "Bearer " + token } }
+    });
+
+    const { data: { user }, error: userErr } = await sb.auth.getUser(token);
+    if (userErr || !user) return res.status(401).json({ error: "Invalid token" });
+
+    // Get profile from customers table
+    const { data: profile } = await sb
+      .from("customers")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    // Get balance from customer_balances
+    const { data: balance } = await sb
+      .from("customer_balances")
+      .select("*")
+      .eq("customer_id", user.id)
+      .maybeSingle();
+
+    // Get downline count (all 4 levels)
+    var { data: allCusts } = await sb
+      .from("customers")
+      .select("id,parent_id");
+    var downlineCount = 0;
+    var current = [user.id];
+    for(var lvl=0; lvl<4; lvl++) {
+      var next = (allCusts||[]).filter(function(x){ return current.indexOf(x.parent_id) !== -1; }).map(function(x){ return x.id; });
+      downlineCount += next.length;
+      current = next;
+      if(next.length===0) break;
+    }
+
+    if (profile) {
+      var result = {
+        id: profile.id,
+        name: profile.name || "",
+        email: profile.email && profile.email.indexOf("@nogin.nova.local") === -1 ? profile.email : "",
+        phone: profile.phone_encrypted ? (decryptPhone(profile.phone_encrypted) || (user.user_metadata && user.user_metadata.phone) || "N/A") : ((user.user_metadata && user.user_metadata.phone) || "N/A"),
+        phone_masked: profile.phone_encrypted ? (decryptPhone(profile.phone_encrypted) || (user.user_metadata && user.user_metadata.phone) || "N/A") : ((user.user_metadata && user.user_metadata.phone) || "N/A"),
+        referral_code: profile.public_id || "",
+        referred_by: profile.parent_id || null,
+        downline_count: downlineCount || 0,
+        created_at: profile.created_at || "",
+        role: profile.role || "customer",
+        balance: {
+          available_balance: balance ? balance.available_balance : 0,
+          total_earned: balance ? balance.total_earned : 0,
+          total_withdrawn: balance ? balance.total_withdrawn : 0
+        }
+      };
+      return res.json({ success: true, user: result });
+    }
+
+    // No profile found - return fallback from Auth metadata
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email || "",
+        name: (user.user_metadata && user.user_metadata.name) || "",
+        phone: "N/A",
+        phone_masked: "N/A",
+        referral_code: user.id.substring(0, 6).toUpperCase(),
+        referred_by: null,
+        downline_count: 0,
+        created_at: user.created_at || "",
+        role: "customer",
+        balance: { available_balance: 0, total_earned: 0, total_withdrawn: 0 }
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
