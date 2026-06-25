@@ -6,6 +6,10 @@
       "use": "@vercel/node"
     },
     {
+      "src": "api/check-forgot-phone.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "api/login.js",
       "use": "@vercel/node"
     },
@@ -51,6 +55,10 @@
     }
   ],
   "routes": [
+    {
+      "src": "/api/check-forgot-phone",
+      "dest": "/api/check-forgot-phone.js"
+    },
     {
       "src": "/api/login",
       "dest": "/api/login.js"
