@@ -110,11 +110,17 @@ module.exports = async (req, res) => {
       var cid = req.query.customer_id || "";
       var newPhone = req.query.new_phone || "";
       var force = req.query.force === "true";
+      var forceDupId = req.query.dup_id || "";
       if (!cid || !newPhone) return res.status(400).json({ error: "customer_id and new_phone required" });
       // Check duplicate using phone_hash
       var phoneHash = crypto.createHash("sha256").update(newPhone).digest("hex");
-      var { data: dup } = await sbAdmin.from('customers').select('id').neq('id', cid).eq('phone_hash', phoneHash).maybeSingle();
-      var dupId = dup ? dup.id : null;
+      var dupId = null;
+      if (forceDupId) {
+        dupId = forceDupId;
+      } else {
+        var { data: dup } = await sbAdmin.from('customers').select('id').neq('id', cid).eq('phone_hash', phoneHash).maybeSingle();
+        dupId = dup ? dup.id : null;
+      }
       if (dupId) {
         if (!force) {
           return res.status(409).json({ error: '手机号 ' + newPhone + ' 已被其他账号使用。勾选强制换绑可覆盖' });
