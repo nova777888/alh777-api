@@ -119,8 +119,8 @@ module.exports = async (req, res) => {
         if (!force) {
           return res.status(409).json({ error: '手机号 ' + newPhone + ' 已被其他账号使用。勾选强制换绑可覆盖' });
         }
-        // Force mode: clear the phone from the existing customer
-        var { error: clearErr } = await sbAdmin.from('customers').update({ phone_encrypted: null }).eq('id', dupId);
+        // Force mode: clear the phone from the existing customer (both encrypted and hash)
+        var { error: clearErr } = await sbAdmin.from('customers').update({ phone_encrypted: null, phone_hash: null }).eq('id', dupId);
         if (clearErr) return res.status(500).json({ error: 'Failed to clear existing phone: ' + clearErr.message });
       }
       // Encrypt and assign phone to target customer
