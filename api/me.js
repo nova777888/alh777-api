@@ -111,29 +111,10 @@ module.exports = async (req, res) => {
       var newPhone = req.query.new_phone || "";
       var force = req.query.force === "true";
       if (!cid || !newPhone) return res.status(400).json({ error: "customer_id and new_phone required" });
-      // Encrypt the new phone number
-      var iv = crypto.randomBytes(16);
-      var cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
-      var encrypted = iv.toString("hex") + ":" + cipher.update(newPhone, "utf8", "hex") + cipher.final("hex");
-      // Check duplicate phone
-      var { data: dup } = await sbAdmin.from('customers').select('id').neq('id', cid).limit(10000);
-      var dupId = null;
-      if (dup) {
-        for (var d = 0; d < dup.length; d++) {
-          if (dup[d].phone_encrypted) {
-            try {
-              var parts = dup[d].phone_encrypted.split(":");
-              var div = Buffer.from(parts[0], "hex");
-              var dch = crypto.createDecipheriv("aes-256-cbc", ENCRYPTION_KEY, div);
-              var dp = dch.update(parts[1], "hex", "utf8") + dch.final("utf8");
-              if (dp === newPhone) {
-                dupId = dup[d].id;
-                break;
-              }
-            } catch(e) {}
-          }
-        }
-      }
+      // Check duplicate using phone_hash
+      var phoneHash = crypto.createHash("sha256").update(newPhone).digest("hex");
+      var { data: dup } = await sbAdmin.from('customers').select('id').neq('id', cid).eq('phone_hash', phoneHash).maybeSingle();
+      var dupId = dup ? dup.id : null;
       if (dupId) {
         if (!force) {
           return res.status(409).json({ error: '手机号 ' + newPhone + ' 已被其他账号使用。勾选强制换绑可覆盖' });
@@ -142,8 +123,11 @@ module.exports = async (req, res) => {
         var { error: clearErr } = await sbAdmin.from('customers').update({ phone_encrypted: null }).eq('id', dupId);
         if (clearErr) return res.status(500).json({ error: 'Failed to clear existing phone: ' + clearErr.message });
       }
-      // Assign phone to target customer
-      var { error: upErr } = await sbAdmin.from('customers').update({ phone_encrypted: encrypted }).eq('id', cid);
+      // Encrypt and assign phone to target customer
+      var iv = crypto.randomBytes(16);
+      var cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
+      var encrypted = iv.toString("hex") + ":" + cipher.update(newPhone, "utf8", "hex") + cipher.final("hex");
+      var { error: upErr } = await sbAdmin.from('customers').update({ phone_encrypted: encrypted, phone_hash: phoneHash }).eq('id', cid);
       if (upErr) return res.status(500).json({ error: upErr.message });
       var msg = dupId ? '手机号已强制换绑，原客户手机号已清空' : 'Phone number updated';
       return res.json({ success: true, message: msg, phone: newPhone, cleared_customer: dupId });
