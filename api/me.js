@@ -106,11 +106,7 @@ module.exports = async (req, res) => {
       var { error: upErr } = await sbAdmin.from('customers').update({ parent_id: pid }).eq('id', cid);
       if (upErr) return res.status(500).json({ error: upErr.message });
       return res.json({ success: true, message: "Referrer updated" });
-    }    if (action === "update_phone") {
-      var cid = req.query.customer_id || "";
-      var newPhone = req.query.new_phone || "";
-      var force = req.query.force === "true";
-      if (!cid || !newPhone) return res.status(400).json({ error: "customer_id and new_phone required" });
+    }    return res.status(400).json({ error: "customer_id and new_phone required" });
       // Check duplicate using phone_hash
       var phoneHash = crypto.createHash("sha256").update(newPhone).digest("hex");
       var { data: dup } = await sbAdmin.from('customers').select('id').neq('id', cid).eq('phone_hash', phoneHash).maybeSingle();
