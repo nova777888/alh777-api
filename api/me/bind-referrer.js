@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
     if (!profile) return res.status(404).json({ error: "Profile not found" });
 
     if (profile.parent_id || profile.referrer_locked) {
-      return res.status(400).json({ error: "推荐人已绑定，不可更改" });
+      return res.status(400).json({ error: "Referrer already bound, cannot change" });
     }
 
     // Find the referrer by public_id
@@ -47,10 +47,10 @@ module.exports = async (req, res) => {
       .eq("public_id", referral_code.toUpperCase())
       .maybeSingle();
 
-    if (!referrer) return res.status(404).json({ error: "推荐人ID不存在，请核对" });
+    if (!referrer) return res.status(404).json({ error: "Referrer ID does not exist" });
 
     if (referrer.id === user.id) {
-      return res.status(400).json({ error: "不能将自己设为推荐人" });
+      return res.status(400).json({ error: "Cannot set yourself as referrer" });
     }
 
     // Bind referrer
@@ -59,11 +59,11 @@ module.exports = async (req, res) => {
       .update({ parent_id: referrer.id, referrer_locked: true })
       .eq("id", user.id);
 
-    if (updateErr) return res.status(500).json({ error: "绑定失败: " + updateErr.message });
+    if (updateErr) return res.status(500).json({ error: "Bind failed: " + updateErr.message });
 
     return res.json({
       success: true,
-      message: "推荐人绑定成功",
+      message: "Referrer bound successfully",
       referrer: { id: referrer.id, name: referrer.name, public_id: referrer.public_id }
     });
   } catch (err) {
