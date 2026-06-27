@@ -143,11 +143,16 @@ module.exports = async (req, res) => {
         var newEncrypted = swapIv.toString("hex") + ":" + swapCipher.update(newPhone, "utf8", "hex") + swapCipher.final("hex");
         
         // 3. Assign new phone to target customer + swap email in customers table
-        // Use temp placeholder to avoid unique constraint on email
+        // Use temp placeholder to avoid unique constraints on both email and phone_hash
         var tempEmail = "swap-temp-" + cid.substring(0,8) + "@temp.nova.local";
+        // Clear dup phone_hash first to avoid unique constraint conflict
+        await sbAdmin.from('customers').update({ phone_hash: null }).eq('id', dupId);
+        // Swap emails using temp placeholder
         await sbAdmin.from('customers').update({ email: tempEmail }).eq('id', cid);
         await sbAdmin.from('customers').update({ email: oldEmail }).eq('id', dupId);
+        // Set cid phone+hash+email (no conflict since dup hash is now null)
         await sbAdmin.from('customers').update({ phone_encrypted: newEncrypted, phone_hash: phoneHash, email: dupEmail || null }).eq('id', cid);
+        // Set dup phone+hash (no conflict since cid hash was changed to new value)
         var { error: tgtErr } = await sbAdmin.from('customers').update({ phone_encrypted: oldEncrypted || null, phone_hash: oldHash || null }).eq('id', dupId);
         if (tgtErr) return res.status(500).json({ error: 'Swap failed (dup phone): ' + tgtErr.message });
         
