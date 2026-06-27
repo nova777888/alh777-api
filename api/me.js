@@ -106,8 +106,28 @@ module.exports = async (req, res) => {
       var { error: upErr } = await sbAdmin.from('customers').update({ parent_id: pid }).eq('id', cid);
       if (upErr) return res.status(500).json({ error: upErr.message });
       return res.json({ success: true, message: "Referrer updated" });
-    }
-    return res.status(400).json({ error: 'Unknown action' });
+    }    return res.status(400).json({ error: "customer_id and new_phone required" });
+      // Check duplicate using phone_hash
+      var phoneHash = crypto.createHash("sha256").update(newPhone).digest("hex");
+      var { data: dup } = await sbAdmin.from('customers').select('id').neq('id', cid).eq('phone_hash', phoneHash).maybeSingle();
+      var dupId = dup ? dup.id : null;
+      if (dupId) {
+        if (!force) {
+          return res.status(409).json({ error: '手机号 ' + newPhone + ' 已被其他账号使用。勾选强制换绑可覆盖' });
+        }
+        // Force mode: clear the phone from the existing customer (both encrypted and hash)
+        var { error: clearErr } = await sbAdmin.from('customers').update({ phone_encrypted: null, phone_hash: null }).eq('id', dupId);
+        if (clearErr) return res.status(500).json({ error: 'Failed to clear existing phone: ' + clearErr.message });
+      }
+      // Encrypt and assign phone to target customer
+      var iv = crypto.randomBytes(16);
+      var cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
+      var encrypted = iv.toString("hex") + ":" + cipher.update(newPhone, "utf8", "hex") + cipher.final("hex");
+      var { error: upErr } = await sbAdmin.from('customers').update({ phone_encrypted: encrypted, phone_hash: phoneHash }).eq('id', cid);
+      if (upErr) return res.status(500).json({ error: upErr.message });
+      var msg = dupId ? '手机号已强制换绑，原客户手机号已清空' : 'Phone number updated';
+      return res.json({ success: true, message: msg, phone: newPhone, cleared_customer: dupId });
+    }return res.status(400).json({ error: 'Unknown action' });
   }
 
     const authHeader = req.headers.authorization || "";
