@@ -56,6 +56,9 @@ module.exports = async (req, res) => {
     });
 
     var normPhone = normalizePhone(phone);
+    if (!normPhone.startsWith('+234')) {
+      return res.status(400).json({ error: 'Only +234 (Nigeria) phone numbers are allowed to register' });
+    }
     var phoneHash = hashPhone(normPhone);
     var phoneEncrypted = encryptPhone(normPhone);
     const emailLower = email ? email.toLowerCase() : null;
