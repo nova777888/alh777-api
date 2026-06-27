@@ -106,6 +106,34 @@ module.exports = async (req, res) => {
       var { error: upErr } = await sbAdmin.from('customers').update({ parent_id: pid }).eq('id', cid);
       if (upErr) return res.status(500).json({ error: upErr.message });
       return res.json({ success: true, message: "Referrer updated" });
+    }    if (action === "update_phone") {
+      var cid = req.query.customer_id || "";
+      var newPhone = req.query.new_phone || "";
+      if (!cid || !newPhone) return res.status(400).json({ error: "customer_id and new_phone required" });
+      // Encrypt the new phone number
+      var iv = crypto.randomBytes(16);
+      var cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
+      var encrypted = iv.toString("hex") + ":" + cipher.update(newPhone, "utf8", "hex") + cipher.final("hex");
+      // Check duplicate phone
+      var { data: dup } = await sbAdmin.from('customers').select('id').neq('id', cid).limit(10000);
+      if (dup) {
+        for (var d = 0; d < dup.length; d++) {
+          if (dup[d].phone_encrypted) {
+            try {
+              var parts = dup[d].phone_encrypted.split(":");
+              var div = Buffer.from(parts[0], "hex");
+              var dch = crypto.createDecipheriv("aes-256-cbc", ENCRYPTION_KEY, div);
+              var dp = dch.update(parts[1], "hex", "utf8") + dch.final("utf8");
+              if (dp === newPhone) {
+                return res.status(409).json({ error: '手机号 ' + newPhone + ' 已被其他账号使用' });
+              }
+            } catch(e) {}
+          }
+        }
+      }
+      var { error: upErr } = await sbAdmin.from('customers').update({ phone_encrypted: encrypted }).eq('id', cid);
+      if (upErr) return res.status(500).json({ error: upErr.message });
+      return res.json({ success: true, message: "Phone number updated", phone: newPhone });
     }return res.status(400).json({ error: 'Unknown action' });
   }
 
