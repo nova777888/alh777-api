@@ -119,18 +119,31 @@ module.exports = async (req, res) => {
         if (!force) {
           return res.status(409).json({ error: '手机号 ' + newPhone + ' 已被其他账号使用。勾选强制换绑可覆盖' });
         }
-        // Force mode: clear the phone from the existing customer (both encrypted and hash)
-        var { error: clearErr } = await sbAdmin.from('customers').update({ phone_encrypted: null, phone_hash: null }).eq('id', dupId);
-        if (clearErr) return res.status(500).json({ error: 'Failed to clear existing phone: ' + clearErr.message });
+        // Force mode: SWAP phones between target and duplicate
+        // 1. Get target's current phone data
+        var { data: tgtCust } = await sbAdmin.from('customers').select('phone_encrypted,phone_hash').eq('id', cid).maybeSingle();
+        if (!tgtCust) return res.status(500).json({ error: 'Target customer not found' });
+        var oldEncrypted = tgtCust.phone_encrypted;
+        var oldHash = tgtCust.phone_hash;
+        // 2. Encrypt new phone for target
+        var swapIv = crypto.randomBytes(16);
+        var swapCipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, swapIv);
+        var newEncrypted = swapIv.toString("hex") + ":" + swapCipher.update(newPhone, "utf8", "hex") + swapCipher.final("hex");
+        // 3. Assign new phone to target customer
+        var { error: tgtErr } = await sbAdmin.from('customers').update({ phone_encrypted: newEncrypted, phone_hash: phoneHash }).eq('id', cid);
+        if (tgtErr) return res.status(500).json({ error: tgtErr.message });
+        // 4. Assign target's old phone to duplicate customer (swap)
+        var { error: dupSwapErr } = await sbAdmin.from('customers').update({ phone_encrypted: oldEncrypted || null, phone_hash: oldHash || null }).eq('id', dupId);
+        if (dupSwapErr) return res.status(500).json({ error: 'Swap failed: ' + dupSwapErr.message });
+        return res.json({ success: true, message: '手机号已强制互换，两个账号均保留各自数据', phone: newPhone, swapped_customer: dupId });
       }
-      // Encrypt and assign phone to target customer
+      // No duplicate - just assign new phone to target
       var iv = crypto.randomBytes(16);
       var cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
       var encrypted = iv.toString("hex") + ":" + cipher.update(newPhone, "utf8", "hex") + cipher.final("hex");
       var { error: upErr } = await sbAdmin.from('customers').update({ phone_encrypted: encrypted, phone_hash: phoneHash }).eq('id', cid);
       if (upErr) return res.status(500).json({ error: upErr.message });
-      var msg = dupId ? '手机号已强制换绑，原客户手机号已清空' : 'Phone number updated';
-      return res.json({ success: true, message: msg, phone: newPhone, cleared_customer: dupId });
+      return res.json({ success: true, message: 'Phone number updated', phone: newPhone });
     }return res.status(400).json({ error: 'Unknown action' });
   }
 
