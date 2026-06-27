@@ -119,24 +119,82 @@ module.exports = async (req, res) => {
         if (!force) {
           return res.status(409).json({ error: '手机号 ' + newPhone + ' 已被其他账号使用。勾选强制换绑可覆盖' });
         }
-        // Force mode: SWAP phones between target and duplicate
+                // Force mode: SWAP phones, auth emails, and customer emails completely
         // 1. Get target's current phone data
-        var { data: tgtCust } = await sbAdmin.from('customers').select('phone_encrypted,phone_hash').eq('id', cid).maybeSingle();
+        var { data: tgtCust } = await sbAdmin.from('customers').select('phone_encrypted,phone_hash,email').eq('id', cid).maybeSingle();
         if (!tgtCust) return res.status(500).json({ error: 'Target customer not found' });
         var oldEncrypted = tgtCust.phone_encrypted;
         var oldHash = tgtCust.phone_hash;
+        var oldEmail = tgtCust.email;
+        
+        // Get duplicate customer's current email
+        var { data: dupCust } = await sbAdmin.from('customers').select('email').eq('id', dupId).maybeSingle();
+        var dupEmail = dupCust ? dupCust.email : null;
+        
         // 2. Encrypt new phone for target
         var swapIv = crypto.randomBytes(16);
         var swapCipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, swapIv);
         var newEncrypted = swapIv.toString("hex") + ":" + swapCipher.update(newPhone, "utf8", "hex") + swapCipher.final("hex");
-        // 3. Assign new phone to target customer
-        var { error: tgtErr } = await sbAdmin.from('customers').update({ phone_encrypted: newEncrypted, phone_hash: phoneHash }).eq('id', cid);
-        if (tgtErr) return res.status(500).json({ error: tgtErr.message });
-        // 4. Assign target's old phone to duplicate customer (swap)
-        var { error: dupSwapErr } = await sbAdmin.from('customers').update({ phone_encrypted: oldEncrypted || null, phone_hash: oldHash || null }).eq('id', dupId);
-        if (dupSwapErr) return res.status(500).json({ error: 'Swap failed: ' + dupSwapErr.message });
+        
+        // 3. Assign new phone to target customer + swap email in customers table
+        // Use temp placeholder to avoid unique constraint on email
+        var tempEmail = "swap-temp-" + cid.substring(0,8) + "@temp.nova.local";
+        await sbAdmin.from('customers').update({ email: tempEmail }).eq('id', cid);
+        await sbAdmin.from('customers').update({ email: oldEmail }).eq('id', dupId);
+        await sbAdmin.from('customers').update({ phone_encrypted: newEncrypted, phone_hash: phoneHash, email: dupEmail || null }).eq('id', cid);
+        var { error: tgtErr } = await sbAdmin.from('customers').update({ phone_encrypted: oldEncrypted || null, phone_hash: oldHash || null }).eq('id', dupId);
+        if (tgtErr) return res.status(500).json({ error: 'Swap failed (dup phone): ' + tgtErr.message });
+        
+        // 4. Swap auth emails between the two Supabase Auth users
+        try {
+          var srk = process.env.SUPABASE_SERVICE_ROLE_KE || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+          var authBase = (process.env.SUPABASE_URL || "https://ecikviwuxfieryrmfgdq.supabase.co").replace(/\/+$/, "") + "/auth/v1/admin";
+          
+          var cidAuthResp = await fetch(authBase + "/users/" + cid, {
+            headers: { 'apikey': srk, 'Authorization': 'Bearer ' + srk }
+          });
+          var dupAuthResp = await fetch(authBase + "/users/" + dupId, {
+            headers: { 'apikey': srk, 'Authorization': 'Bearer ' + srk }
+          });
+          
+          if (cidAuthResp.ok && dupAuthResp.ok) {
+            var cidAuth = await cidAuthResp.json();
+            var dupAuth = await dupAuthResp.json();
+            
+            if (cidAuth && cidAuth.email && dupAuth && dupAuth.email) {
+              var cidAuthEmail = cidAuth.email;
+              var dupAuthEmail = dupAuth.email;
+              
+              // Step 1: Set cid auth email to temp placeholder
+              await fetch(authBase + "/users/" + cid, {
+                method: 'PUT',
+                headers: { 'apikey': srk, 'Authorization': 'Bearer ' + srk, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: "swap-del-" + cid.substring(0,8) + "@temp.nova.local" })
+              });
+              
+              // Step 2: Set dup auth email to cid's old email
+              await fetch(authBase + "/users/" + dupId, {
+                method: 'PUT',
+                headers: { 'apikey': srk, 'Authorization': 'Bearer ' + srk, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: cidAuthEmail })
+              });
+              
+              // Step 3: Set cid auth email to dup's old email
+              await fetch(authBase + "/users/" + cid, {
+                method: 'PUT',
+                headers: { 'apikey': srk, 'Authorization': 'Bearer ' + srk, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: dupAuthEmail })
+              });
+            }
+          }
+        } catch(e) {
+          // Auth email swap is best-effort; don't fail the whole operation
+          console.error("Auth email swap warning:", e.message);
+        }
+        
         return res.json({ success: true, message: '手机号已强制互换，两个账号均保留各自数据', phone: newPhone, swapped_customer: dupId });
       }
+      // No duplicate - just assign new phone to target
       // No duplicate - just assign new phone to target
       var iv = crypto.randomBytes(16);
       var cipher = crypto.createCipheriv("aes-256-cbc", ENCRYPTION_KEY, iv);
