@@ -75,7 +75,7 @@ module.exports = async (req, res) => {
     const tpl = getTemplate(normalizedType);
     const apiKey = process.env.RESEND_API_KEY || "re_BPa5YoV8_N32aAN891g6AoiaS34NMCkoo";
 
-    let fromEmail = process.env.RESEND_FROM_EMAIL || "Nova Exchange <mail@resend.dev>";
+    let fromEmail = process.env.RESEND_FROM_EMAIL || "Nova Exchange <noreply@mail.alh777.com>";
 
     const resend = new Resend(apiKey);
     const { data, error } = await resend.emails.send({
